@@ -57,6 +57,25 @@ What it does:
 
 This gives you a quick confidence pass before doing Spotify auth.
 
+## Free hosting for browser demo (Render)
+
+This repo includes [render.yaml](render.yaml) so you can deploy quickly on Render's free web service.
+
+1. Push this repo to GitHub.
+2. In Render, click **New +** -> **Blueprint** and select this repository.
+3. Set required env vars in Render:
+	- `SPOTIFY_CLIENT_ID`
+	- `SPOTIFY_CLIENT_SECRET`
+	- `SPOTIFY_REDIRECT_URI` (set this to `https://YOUR-RENDER-URL/auth/spotify/callback`)
+4. In Spotify Developer Dashboard, add the same redirect URI.
+5. Deploy and open your Render URL.
+
+Notes:
+
+- Free tier may spin down when idle (first request can be slow).
+- Cookies are set with `SameSite=Lax` and secure mode in production.
+- Sessions are currently in-memory, so users will re-auth after restart/redeploy.
+
 ## Full manual flow (Spotify connected)
 
 1. Start app: `npm run dev`

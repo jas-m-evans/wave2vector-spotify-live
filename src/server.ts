@@ -21,6 +21,8 @@ import { SessionRecord, SpotifyTokens, TrackFeatureVector } from "./types.js";
 dotenv.config();
 
 const port = Number(process.env.PORT ?? 8787);
+const isProduction = process.env.NODE_ENV === "production";
+const cookieSecure = (process.env.COOKIE_SECURE ?? (isProduction ? "true" : "false")) === "true";
 const app = express();
 
 app.use(cors());
@@ -223,7 +225,7 @@ app.get("/auth/spotify/login", (req, res) => {
   res.cookie("sid", sid, {
     httpOnly: true,
     sameSite: "lax",
-    secure: false,
+    secure: cookieSecure,
   });
   res.redirect(spotifyLoginUrl(state));
 });
