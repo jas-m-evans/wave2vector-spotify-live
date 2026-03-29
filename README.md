@@ -11,6 +11,8 @@ This repo is a starting implementation for Spotify-connected, real-time similari
 - User taste-profile refresh from top Spotify tracks
 - Live recommendations API using vector similarity
 - Blended reranking (now-playing similarity + taste affinity)
+- Diversity-aware reranking to reduce near-duplicate suggestions
+- Explainability tags showing closest matching audio features
 - Browser UI for testing login, seeding, polling, and recommendations
 
 ## Why this architecture
@@ -64,6 +66,10 @@ This gives you a quick confidence pass before doing Spotify auth.
 5. Click **Refresh taste profile**
 6. Play a track in Spotify and click **Refresh now playing + recs**
 7. Optionally click **Start live polling** for auto-refresh every 4s
+8. Tune recommendation behavior live:
+	- **Diversity**: higher gives more varied results
+	- **Taste weight**: higher leans toward your long-term profile
+	- **Recommendation count**: adjusts number of returned cards
 
 ## API endpoints
 
@@ -75,12 +81,26 @@ This gives you a quick confidence pass before doing Spotify auth.
 - `GET /api/library`
 - `GET /api/profile`
 - `POST /api/profile/taste-refresh`
-- `GET /api/recommendations/live?k=5`
+- `GET /api/recommendations/live?k=5&diversity=0.2&tasteWeight=0.25`
+
+### Recommendation controls and output
+
+- `k` (default `5`): number of recommendations
+- `diversity` (default `0.2`, range `0..1`): applies MMR-style reranking
+	- `0` favors pure similarity
+	- `1` strongly favors dissimilarity among picks
+- `tasteWeight` (default `0.25`, range `0..1`): blend weight for profile affinity
+
+Each recommendation now includes:
+
+- `similarity` (target-track similarity)
+- `tasteSimilarity` (profile affinity, when available)
+- `blendedScore` (combined score)
+- `reasons` (top matching feature tags, shown in UI chips)
 
 ## Next implementation steps
 
 - Move session/token store to Redis/Postgres
 - Persist track feature cache in Postgres with pgvector
-- Add novelty/diversity reranking constraints
 - Add background workers for feature hydration
 - Build richer visualizer tied to Spotify section/beat timing

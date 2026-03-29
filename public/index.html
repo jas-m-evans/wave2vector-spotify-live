@@ -65,8 +65,40 @@
       .muted {
         color: var(--muted);
       }
+      .control-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(170px, 1fr));
+        gap: 12px;
+        margin-top: 8px;
+      }
+      .control-grid label {
+        display: block;
+        font-size: 0.92rem;
+      }
+      .control-grid input[type="range"],
+      .control-grid input[type="number"] {
+        width: 100%;
+        margin-top: 6px;
+      }
+      .chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 6px;
+      }
+      .chip {
+        background: #24324a;
+        border: 1px solid #35517a;
+        border-radius: 999px;
+        padding: 3px 8px;
+        font-size: 0.8rem;
+        color: #cbe0ff;
+      }
       @media (max-width: 760px) {
         .row {
+          grid-template-columns: 1fr;
+        }
+        .control-grid {
           grid-template-columns: 1fr;
         }
       }
@@ -83,6 +115,20 @@
         <button id="taste">Refresh taste profile</button>
         <button id="refresh">Refresh now playing + recs</button>
         <button id="poll">Start live polling</button>
+        <div class="control-grid">
+          <label>
+            Diversity <span id="diversity-value">0.20</span>
+            <input id="diversity" type="range" min="0" max="1" step="0.05" value="0.2" />
+          </label>
+          <label>
+            Taste weight <span id="taste-weight-value">0.25</span>
+            <input id="taste-weight" type="range" min="0" max="1" step="0.05" value="0.25" />
+          </label>
+          <label>
+            Recommendation count
+            <input id="k" type="number" min="1" max="20" value="5" />
+          </label>
+        </div>
       </div>
 
       <section class="panel">

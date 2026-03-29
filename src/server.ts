@@ -42,6 +42,22 @@ const famousTrackSeeds = [
   "4cOdK2wGLETKBW3PvgPWqT",
 ];
 
+const vectorFeatureNames = [
+  "danceability",
+  "energy",
+  "key",
+  "loudness",
+  "mode",
+  "speechiness",
+  "acousticness",
+  "instrumentalness",
+  "liveness",
+  "valence",
+  "tempo",
+  "time_signature",
+  "duration",
+];
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.resolve(__dirname, "../public");
@@ -99,6 +115,56 @@ function cosineSimilarity(a: number[] | undefined, b: number[] | undefined): num
     return 0;
   }
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+function clamp01(value: number): number {
+  if (Number.isNaN(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(1, value));
+}
+
+function explainSimilarity(target: number[], candidate: number[]): string[] {
+  if (!target.length || !candidate.length || target.length !== candidate.length) {
+    return [];
+  }
+  const deltas = target.map((value, idx) => ({
+    idx,
+    delta: Math.abs(value - candidate[idx]),
+  }));
+  deltas.sort((a, b) => a.delta - b.delta);
+  return deltas.slice(0, 3).map((item) => vectorFeatureNames[item.idx] ?? `feature_${item.idx + 1}`);
+}
+
+function mmrRerank<T extends { blendedScore: number; vector: number[] }>(
+  items: T[],
+  k: number,
+  diversity: number,
+): T[] {
+  const selected: T[] = [];
+  const pool = [...items];
+
+  while (selected.length < Math.max(1, k) && pool.length > 0) {
+    let bestIndex = 0;
+    let bestScore = Number.NEGATIVE_INFINITY;
+
+    for (let i = 0; i < pool.length; i += 1) {
+      const candidate = pool[i];
+      const maxSimilarityToSelected = selected.length
+        ? Math.max(...selected.map((item) => cosineSimilarity(item.vector, candidate.vector)))
+        : 0;
+      const mmrScore = (1 - diversity) * candidate.blendedScore - diversity * maxSimilarityToSelected;
+      if (mmrScore > bestScore) {
+        bestScore = mmrScore;
+        bestIndex = i;
+      }
+    }
+
+    selected.push(pool[bestIndex]);
+    pool.splice(bestIndex, 1);
+  }
+
+  return selected;
 }
 
 function averageVectors(vectors: number[][]): number[] | undefined {
@@ -278,6 +344,8 @@ app.get("/api/profile", async (req, res) => {
 app.get("/api/recommendations/live", async (req, res) => {
   try {
     const k = Number(req.query.k ?? 5);
+    const diversity = clamp01(Number(req.query.diversity ?? 0.2));
+    const tasteWeight = clamp01(Number(req.query.tasteWeight ?? 0.25));
     const session = await getActiveSession(req);
     const nowPlaying = await fetchNowPlaying(session.tokens.accessToken);
 
@@ -288,14 +356,14 @@ app.get("/api/recommendations/live", async (req, res) => {
     const target = await cacheTrack(nowPlaying.trackId, session.tokens);
     const candidates = [...library.values()];
 
-    const baseRecommendations = recommendNearest(target, candidates, k * 3);
-    const reranked = baseRecommendations
+    const baseRecommendations = recommendNearest(target, candidates, Math.max(5, k * 4));
+    const rescored = baseRecommendations
       .map((item) => {
         const tasteSimilarity = session.tasteVector
           ? Math.max(0, cosineSimilarity(session.tasteVector, item.vector))
           : undefined;
         const blendedScore = typeof tasteSimilarity === "number"
-          ? item.similarity * 0.75 + tasteSimilarity * 0.25
+          ? item.similarity * (1 - tasteWeight) + tasteSimilarity * tasteWeight
           : item.similarity;
         return {
           trackId: item.trackId,
@@ -307,10 +375,24 @@ app.get("/api/recommendations/live", async (req, res) => {
           distance: Number(item.distance.toFixed(4)),
           tasteSimilarity: typeof tasteSimilarity === "number" ? Number(tasteSimilarity.toFixed(4)) : null,
           blendedScore: Number(blendedScore.toFixed(4)),
+          vector: item.vector,
+          reasons: explainSimilarity(target.vector, item.vector),
         };
       })
-      .sort((a, b) => b.blendedScore - a.blendedScore)
-      .slice(0, Math.max(1, k));
+      .sort((a, b) => b.blendedScore - a.blendedScore);
+
+    const reranked = mmrRerank(rescored, k, diversity).map((item) => ({
+      trackId: item.trackId,
+      name: item.name,
+      artist: item.artist,
+      artworkUrl: item.artworkUrl,
+      previewUrl: item.previewUrl,
+      similarity: item.similarity,
+      distance: item.distance,
+      tasteSimilarity: item.tasteSimilarity,
+      blendedScore: item.blendedScore,
+      reasons: item.reasons,
+    }));
 
     return res.json({
       nowPlaying,
@@ -318,6 +400,11 @@ app.get("/api/recommendations/live", async (req, res) => {
       profile: {
         hasTasteVector: Boolean(session.tasteVector),
         updatedAt: session.tasteUpdatedAt,
+      },
+      controls: {
+        k: Math.max(1, k),
+        diversity,
+        tasteWeight,
       },
       recommendations: reranked,
     });
