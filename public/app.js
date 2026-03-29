@@ -1,6 +1,7 @@
 const debugEl = document.getElementById("debug");
 const nowEl = document.getElementById("now-playing");
 const recEl = document.getElementById("recommendations");
+const profileEl = document.getElementById("profile");
 const pollBtn = document.getElementById("poll");
 
 let polling = false;
@@ -39,13 +40,27 @@ function renderRecommendations(items) {
         <div>
           <strong>${item.name}</strong><br />
           <span class="muted">${item.artist}</span><br />
-          <span class="muted">Similarity ${(item.similarity * 100).toFixed(1)}%</span>
+          <span class="muted">Target ${(item.similarity * 100).toFixed(1)}% | Blended ${(item.blendedScore * 100).toFixed(1)}%</span>
+          ${typeof item.tasteSimilarity === "number" ? `<br /><span class=\"muted\">Taste ${(item.tasteSimilarity * 100).toFixed(1)}%</span>` : ""}
           ${item.previewUrl ? `<br /><audio controls preload="none" src="${item.previewUrl}"></audio>` : ""}
         </div>
       </div>
     `,
     )
     .join("");
+}
+
+function renderProfile(profile) {
+  if (!profile || !profile.hasTasteVector) {
+    profileEl.innerHTML = `<p class=\"muted\">No taste profile yet. Click refresh taste profile.</p>`;
+    return;
+  }
+
+  const updated = profile.updatedAt ? new Date(profile.updatedAt).toLocaleString() : "unknown";
+  profileEl.innerHTML = `
+    <p><strong>Vector dims:</strong> ${profile.dims}</p>
+    <p class="muted"><strong>Updated:</strong> ${updated}</p>
+  `;
 }
 
 async function refresh() {
@@ -55,10 +70,12 @@ async function refresh() {
   if (!response.ok) {
     nowEl.innerHTML = `<p class=\"muted\">${payload.error ?? "Unauthorized"}</p>`;
     recEl.innerHTML = "";
+    profileEl.innerHTML = "";
     return;
   }
   renderNowPlaying(payload.nowPlaying);
   renderRecommendations(payload.recommendations);
+  renderProfile(payload.profile);
 }
 
 document.getElementById("login").addEventListener("click", () => {
@@ -70,6 +87,20 @@ document.getElementById("seed").addEventListener("click", async () => {
   const payload = await response.json();
   debugEl.textContent = JSON.stringify(payload, null, 2);
   if (response.ok) {
+    await refresh();
+  }
+});
+
+document.getElementById("taste").addEventListener("click", async () => {
+  const response = await fetch("/api/profile/taste-refresh", { method: "POST" });
+  const payload = await response.json();
+  debugEl.textContent = JSON.stringify(payload, null, 2);
+  if (response.ok) {
+    renderProfile({
+      hasTasteVector: payload.hasTasteVector,
+      dims: payload.dims,
+      updatedAt: payload.updatedAt,
+    });
     await refresh();
   }
 });

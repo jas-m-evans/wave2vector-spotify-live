@@ -7,6 +7,8 @@ export type SpotifyTokens = {
 export type SessionRecord = {
   id: string;
   tokens: SpotifyTokens;
+  tasteVector?: number[];
+  tasteUpdatedAt?: number;
 };
 
 export type TrackFeatureVector = {
@@ -22,6 +24,8 @@ export type TrackFeatureVector = {
 export type Recommendation = TrackFeatureVector & {
   similarity: number;
   distance: number;
+  tasteSimilarity?: number;
+  blendedScore?: number;
 };
 
 export type NowPlayingResponse = {

@@ -8,7 +8,9 @@ This repo is a starting implementation for Spotify-connected, real-time similari
 - Session + token refresh handling
 - `now playing` API
 - Feature-cache seeding for popular track IDs
+- User taste-profile refresh from top Spotify tracks
 - Live recommendations API using vector similarity
+- Blended reranking (now-playing similarity + taste affinity)
 - Browser UI for testing login, seeding, polling, and recommendations
 
 ## Why this architecture
@@ -43,13 +45,14 @@ npm run dev
 - `GET /api/spotify/now-playing`
 - `POST /api/library/seed-famous`
 - `GET /api/library`
+- `GET /api/profile`
+- `POST /api/profile/taste-refresh`
 - `GET /api/recommendations/live?k=5`
 
 ## Next implementation steps
 
 - Move session/token store to Redis/Postgres
 - Persist track feature cache in Postgres with pgvector
-- Add user taste profile from top tracks/artists
-- Add reranking layer (taste + context + novelty)
+- Add novelty/diversity reranking constraints
 - Add background workers for feature hydration
 - Build richer visualizer tied to Spotify section/beat timing

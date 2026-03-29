@@ -32,6 +32,7 @@ type TrackPayload = {
   artists: Array<{ name: string }>;
   album?: { images?: Array<{ url: string }> };
   preview_url?: string | null;
+  duration_ms?: number;
 };
 
 const scopes = [
@@ -185,9 +186,20 @@ export async function fetchNowPlaying(accessToken: string): Promise<NowPlayingRe
     artist: item.artists.map((a) => a.name).join(", "),
     artworkUrl: item.album?.images?.[0]?.url,
     progressMs: payload.progress_ms,
-    durationMs: undefined,
+    durationMs: item.duration_ms,
     previewUrl: item.preview_url ?? undefined,
   };
+}
+
+export async function fetchTopTrackIds(accessToken: string, limit = 30): Promise<string[]> {
+  const response = await spotifyGet(`/me/top/tracks?time_range=medium_term&limit=${limit}`, accessToken);
+  if (!response.ok) {
+    throw new Error(`Top tracks request failed (${response.status}).`);
+  }
+  const payload = (await response.json()) as { items?: Array<{ id?: string }> };
+  return (payload.items ?? [])
+    .map((item) => item.id)
+    .filter((id): id is string => Boolean(id));
 }
 
 export async function fetchTrackVector(trackId: string, accessToken: string): Promise<TrackFeatureVector> {

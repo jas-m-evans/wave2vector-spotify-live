@@ -9,11 +9,13 @@ import {
   createSessionId,
   createStateToken,
   exchangeCodeForToken,
+  fetchTopTrackIds,
   fetchNowPlaying,
   fetchTrackVector,
   refreshToken,
   spotifyLoginUrl,
 } from "./spotify.js";
+import { loadLibraryFromDisk, persistLibraryToDisk } from "./store.js";
 import { SessionRecord, SpotifyTokens, TrackFeatureVector } from "./types.js";
 
 dotenv.config();
@@ -27,7 +29,7 @@ app.use(express.json());
 
 const stateToSession = new Map<string, string>();
 const sessions = new Map<string, SessionRecord>();
-const library = new Map<string, TrackFeatureVector>();
+const library = await loadLibraryFromDisk();
 
 const famousTrackSeeds = [
   "4uLU6hMCjMI75M1A2tKUQC",
@@ -77,11 +79,74 @@ async function cacheTrack(trackId: string, tokens: SpotifyTokens): Promise<Track
   }
   const track = await fetchTrackVector(trackId, tokens.accessToken);
   library.set(trackId, track);
+  await persistLibraryToDisk(library);
   return track;
 }
 
+function cosineSimilarity(a: number[] | undefined, b: number[] | undefined): number {
+  if (!a || !b || !a.length || !b.length || a.length !== b.length) {
+    return 0;
+  }
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  if (normA === 0 || normB === 0) {
+    return 0;
+  }
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+function averageVectors(vectors: number[][]): number[] | undefined {
+  if (!vectors.length) {
+    return undefined;
+  }
+  const dims = vectors[0]?.length ?? 0;
+  if (!dims) {
+    return undefined;
+  }
+  const sum = new Array<number>(dims).fill(0);
+  for (const vector of vectors) {
+    if (vector.length !== dims) {
+      continue;
+    }
+    for (let i = 0; i < dims; i += 1) {
+      sum[i] += vector[i];
+    }
+  }
+  return sum.map((value) => value / vectors.length);
+}
+
+async function refreshTasteProfile(session: SessionRecord): Promise<{ sampled: number; cached: number }> {
+  const topIds = await fetchTopTrackIds(session.tokens.accessToken, 25);
+  const vectors: number[][] = [];
+
+  for (const trackId of topIds) {
+    try {
+      const vector = await cacheTrack(trackId, session.tokens);
+      vectors.push(vector.vector);
+    } catch {
+      // Skip unavailable tracks in local market.
+    }
+  }
+
+  const centroid = averageVectors(vectors);
+  session.tasteVector = centroid;
+  session.tasteUpdatedAt = Date.now();
+  sessions.set(session.id, session);
+
+  return {
+    sampled: topIds.length,
+    cached: vectors.length,
+  };
+}
+
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, librarySize: library.size });
+  res.json({ ok: true, librarySize: library.size, sessions: sessions.size });
 });
 
 app.get("/auth/spotify/login", (req, res) => {
@@ -180,6 +245,36 @@ app.get("/api/library", async (req, res) => {
   }
 });
 
+app.post("/api/profile/taste-refresh", async (req, res) => {
+  try {
+    const session = await getActiveSession(req);
+    const result = await refreshTasteProfile(session);
+    return res.json({
+      ...result,
+      hasTasteVector: Boolean(session.tasteVector),
+      dims: session.tasteVector?.length ?? 0,
+      updatedAt: session.tasteUpdatedAt,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(401).json({ error: message });
+  }
+});
+
+app.get("/api/profile", async (req, res) => {
+  try {
+    const session = await getActiveSession(req);
+    return res.json({
+      hasTasteVector: Boolean(session.tasteVector),
+      dims: session.tasteVector?.length ?? 0,
+      updatedAt: session.tasteUpdatedAt,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(401).json({ error: message });
+  }
+});
+
 app.get("/api/recommendations/live", async (req, res) => {
   try {
     const k = Number(req.query.k ?? 5);
@@ -193,17 +288,39 @@ app.get("/api/recommendations/live", async (req, res) => {
     const target = await cacheTrack(nowPlaying.trackId, session.tokens);
     const candidates = [...library.values()];
 
-    const recommendations = recommendNearest(target, candidates, k).map((r) => ({
-      trackId: r.trackId,
-      name: r.name,
-      artist: r.artist,
-      artworkUrl: r.artworkUrl,
-      previewUrl: r.previewUrl,
-      similarity: Number(r.similarity.toFixed(4)),
-      distance: Number(r.distance.toFixed(4)),
-    }));
+    const baseRecommendations = recommendNearest(target, candidates, k * 3);
+    const reranked = baseRecommendations
+      .map((item) => {
+        const tasteSimilarity = session.tasteVector
+          ? Math.max(0, cosineSimilarity(session.tasteVector, item.vector))
+          : undefined;
+        const blendedScore = typeof tasteSimilarity === "number"
+          ? item.similarity * 0.75 + tasteSimilarity * 0.25
+          : item.similarity;
+        return {
+          trackId: item.trackId,
+          name: item.name,
+          artist: item.artist,
+          artworkUrl: item.artworkUrl,
+          previewUrl: item.previewUrl,
+          similarity: Number(item.similarity.toFixed(4)),
+          distance: Number(item.distance.toFixed(4)),
+          tasteSimilarity: typeof tasteSimilarity === "number" ? Number(tasteSimilarity.toFixed(4)) : null,
+          blendedScore: Number(blendedScore.toFixed(4)),
+        };
+      })
+      .sort((a, b) => b.blendedScore - a.blendedScore)
+      .slice(0, Math.max(1, k));
 
-    return res.json({ nowPlaying, target, recommendations });
+    return res.json({
+      nowPlaying,
+      target,
+      profile: {
+        hasTasteVector: Boolean(session.tasteVector),
+        updatedAt: session.tasteUpdatedAt,
+      },
+      recommendations: reranked,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return res.status(401).json({ error: message });
