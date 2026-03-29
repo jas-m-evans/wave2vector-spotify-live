@@ -37,6 +37,34 @@ npm run dev
 
 6. Open `http://localhost:8787`.
 
+## Easy testing (fast path)
+
+Run this one command:
+
+```bash
+npm run test:easy
+```
+
+What it does:
+
+- Type checks the repo
+- Builds the TypeScript server
+- Starts the built server briefly
+- Verifies `/health` works
+- Verifies protected routes correctly return `401` when not logged in
+
+This gives you a quick confidence pass before doing Spotify auth.
+
+## Full manual flow (Spotify connected)
+
+1. Start app: `npm run dev`
+2. Open `http://localhost:8787`
+3. Click **Connect Spotify**
+4. Click **Seed famous-song feature cache**
+5. Click **Refresh taste profile**
+6. Play a track in Spotify and click **Refresh now playing + recs**
+7. Optionally click **Start live polling** for auto-refresh every 4s
+
 ## API endpoints
 
 - `GET /health`
