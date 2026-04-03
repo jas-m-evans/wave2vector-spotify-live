@@ -4,6 +4,20 @@ import dotenv from "dotenv";
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { z } from "zod";
+import { computeCompatibility } from "./compatibility.js";
+import {
+  getRoomSnapshot,
+  getTwoActiveParticipants,
+  markParticipantJoined,
+  markParticipantLeft,
+  setCompatibilitySummary,
+  setMutualRecommendations,
+  shareNowPlaying,
+  shareTasteProfile,
+} from "./livekitStore.js";
+import { createLiveKitAccessToken } from "./livekit.js";
+import { computeMutualRecommendations } from "./mutualRecommendations.js";
 import { recommendNearest } from "./recommend.js";
 import {
   createSessionId,
@@ -64,6 +78,16 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.resolve(__dirname, "../public");
 app.use(express.static(publicDir));
+
+const liveKitTokenBodySchema = z.object({
+  roomName: z.string().trim().min(1).max(120),
+  participantName: z.string().trim().min(1).max(60),
+});
+
+const roomShareBodySchema = z.object({
+  participantName: z.string().trim().min(1).max(60),
+  includeNowPlaying: z.boolean().optional(),
+});
 
 function extractSessionId(req: express.Request): string | null {
   const sid = req.cookies.sid as string | undefined;
@@ -136,6 +160,48 @@ function explainSimilarity(target: number[], candidate: number[]): string[] {
   }));
   deltas.sort((a, b) => a.delta - b.delta);
   return deltas.slice(0, 3).map((item) => vectorFeatureNames[item.idx] ?? `feature_${item.idx + 1}`);
+}
+
+function cleanRoomName(raw: string): string {
+  return raw.trim().replace(/\s+/g, "-").slice(0, 120);
+}
+
+function topTasteSignals(vector: number[]): string[] {
+  return vector
+    .map((value, idx) => ({ idx, value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 3)
+    .map((item) => vectorFeatureNames[item.idx] ?? `feature_${item.idx + 1}`);
+}
+
+async function recomputeRoomAnalytics(roomName: string, k = 10): Promise<void> {
+  const pair = await getTwoActiveParticipants(roomName);
+  if (!pair) {
+    return;
+  }
+
+  const [participantA, participantB] = pair;
+  const tasteA = participantA.tasteProfile;
+  const tasteB = participantB.tasteProfile;
+  if (!tasteA || !tasteB) {
+    return;
+  }
+
+  const compatibility = computeCompatibility({
+    roomName,
+    participantA: tasteA,
+    participantB: tasteB,
+    nowPlayingA: participantA.nowPlayingState,
+    nowPlayingB: participantB.nowPlayingState,
+  });
+  await setCompatibilitySummary(roomName, compatibility);
+
+  const mutualRecommendations = computeMutualRecommendations({
+    participants: [participantA, participantB],
+    library,
+    k,
+  });
+  await setMutualRecommendations(roomName, mutualRecommendations);
 }
 
 function mmrRerank<T extends { blendedScore: number; vector: number[] }>(
@@ -336,6 +402,194 @@ app.get("/api/profile", async (req, res) => {
       hasTasteVector: Boolean(session.tasteVector),
       dims: session.tasteVector?.length ?? 0,
       updatedAt: session.tasteUpdatedAt,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(401).json({ error: message });
+  }
+});
+
+app.post("/api/livekit/token", async (req, res) => {
+  try {
+    const session = await getActiveSession(req);
+    const body = liveKitTokenBodySchema.parse(req.body);
+    const tokenPayload = await createLiveKitAccessToken({
+      roomName: body.roomName,
+      participantName: body.participantName,
+      sessionId: session.id,
+    });
+
+    await markParticipantJoined({
+      roomName: tokenPayload.roomName,
+      participantName: tokenPayload.participantName,
+      sessionId: session.id,
+    });
+
+    return res.json(tokenPayload);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(400).json({ error: message });
+  }
+});
+
+app.post("/api/rooms/:roomName/share-state", async (req, res) => {
+  try {
+    const session = await getActiveSession(req);
+    const roomName = cleanRoomName(req.params.roomName);
+    const body = roomShareBodySchema.parse(req.body);
+
+    await markParticipantJoined({
+      roomName,
+      participantName: body.participantName,
+      sessionId: session.id,
+    });
+
+    let tasteProfile = null;
+    if (session.tasteVector && session.tasteVector.length) {
+      tasteProfile = {
+        roomName,
+        participantName: body.participantName,
+        timestamp: Date.now(),
+        tasteVector: session.tasteVector,
+        tasteUpdatedAt: session.tasteUpdatedAt,
+        topSignals: topTasteSignals(session.tasteVector),
+        profileStats: {
+          dims: session.tasteVector.length,
+        },
+      };
+      await shareTasteProfile({
+        roomName,
+        sessionId: session.id,
+        participantName: body.participantName,
+        profile: tasteProfile,
+      });
+    }
+
+    const includeNowPlaying = body.includeNowPlaying ?? true;
+    let nowPlayingState = null;
+    if (includeNowPlaying) {
+      const nowPlaying = await fetchNowPlaying(session.tokens.accessToken);
+      let vector: number[] | undefined;
+      if (nowPlaying.trackId) {
+        const cached = await cacheTrack(nowPlaying.trackId, session.tokens);
+        vector = cached.vector;
+      }
+
+      nowPlayingState = {
+        roomName,
+        participantName: body.participantName,
+        timestamp: Date.now(),
+        nowPlaying: nowPlaying.trackId ? { ...nowPlaying, vector } : null,
+      };
+
+      await shareNowPlaying({
+        roomName,
+        sessionId: session.id,
+        participantName: body.participantName,
+        nowPlayingState,
+      });
+    }
+
+    await recomputeRoomAnalytics(roomName);
+    const room = await getRoomSnapshot(roomName);
+
+    return res.json({
+      room,
+      shared: {
+        tasteProfile,
+        nowPlayingState,
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(400).json({ error: message });
+  }
+});
+
+app.post("/api/rooms/:roomName/leave", async (req, res) => {
+  try {
+    const session = await getActiveSession(req);
+    const roomName = cleanRoomName(req.params.roomName);
+    await markParticipantLeft({ roomName, sessionId: session.id });
+    const room = await getRoomSnapshot(roomName);
+    return res.json({ room });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(400).json({ error: message });
+  }
+});
+
+app.get("/api/rooms/:roomName/state", async (req, res) => {
+  try {
+    await getActiveSession(req);
+    const roomName = cleanRoomName(req.params.roomName);
+    const room = await getRoomSnapshot(roomName);
+    return res.json({ room });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(401).json({ error: message });
+  }
+});
+
+app.get("/api/rooms/:roomName/compatibility", async (req, res) => {
+  try {
+    await getActiveSession(req);
+    const roomName = cleanRoomName(req.params.roomName);
+    await recomputeRoomAnalytics(roomName);
+    const room = await getRoomSnapshot(roomName);
+
+    if (!room.lastCompatibility) {
+      return res.json({
+        roomName,
+        status: "waiting_for_pair",
+        participants: room.participants.map((participant) => ({
+          participantName: participant.participantName,
+          connected: participant.connected,
+          hasTasteProfile: Boolean(participant.tasteProfile),
+          nowPlaying: participant.nowPlayingState?.nowPlaying
+            ? {
+              trackId: participant.nowPlayingState.nowPlaying.trackId,
+              name: participant.nowPlayingState.nowPlaying.name,
+              artist: participant.nowPlayingState.nowPlaying.artist,
+            }
+            : null,
+        })),
+      });
+    }
+
+    return res.json(room.lastCompatibility);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(401).json({ error: message });
+  }
+});
+
+app.get("/api/rooms/:roomName/mutual-recommendations", async (req, res) => {
+  try {
+    await getActiveSession(req);
+    const roomName = cleanRoomName(req.params.roomName);
+    const k = Math.max(1, Number(req.query.k ?? 10));
+
+    const pair = await getTwoActiveParticipants(roomName);
+    if (!pair) {
+      return res.json({
+        roomName,
+        status: "waiting_for_pair",
+        recommendations: [],
+      });
+    }
+
+    const recommendations = computeMutualRecommendations({
+      participants: pair,
+      library,
+      k,
+    });
+
+    await setMutualRecommendations(roomName, recommendations);
+    return res.json({
+      roomName,
+      participants: [pair[0].participantName, pair[1].participantName],
+      recommendations,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

@@ -30,6 +30,10 @@
         padding: 16px;
         margin-bottom: 14px;
       }
+      .panel h2,
+      .panel h3 {
+        margin-top: 0;
+      }
       button {
         background: linear-gradient(90deg, #1db954, #38d16e);
         color: #07120b;
@@ -94,11 +98,48 @@
         font-size: 0.8rem;
         color: #cbe0ff;
       }
+      .room-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr auto;
+        gap: 10px;
+        align-items: end;
+      }
+      .room-grid input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px;
+        border-radius: 8px;
+        border: 1px solid #35517a;
+        background: #0f1420;
+        color: var(--ink);
+      }
+      .status-badge {
+        display: inline-block;
+        border-radius: 999px;
+        border: 1px solid #35517a;
+        padding: 4px 10px;
+        font-size: 0.8rem;
+        margin-top: 10px;
+      }
+      .score-meter {
+        height: 12px;
+        border-radius: 999px;
+        background: #0f1420;
+        border: 1px solid #35517a;
+        overflow: hidden;
+      }
+      .score-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #ffd166, #1db954);
+      }
       @media (max-width: 760px) {
         .row {
           grid-template-columns: 1fr;
         }
         .control-grid {
+          grid-template-columns: 1fr;
+        }
+        .room-grid {
           grid-template-columns: 1fr;
         }
       }
@@ -136,6 +177,28 @@
         <div id="profile"></div>
       </section>
 
+      <section class="panel">
+        <h2>LiveKit Room Mode</h2>
+        <p class="muted">Two users, one room, one shared compatibility readout.</p>
+        <div class="room-grid">
+          <label>
+            Room Name
+            <input id="room-name" placeholder="friday-vibes" />
+          </label>
+          <label>
+            Display Name
+            <input id="participant-name" placeholder="Alex" />
+          </label>
+          <div>
+            <button id="join-room">Create/Join Room</button>
+            <button id="leave-room">Leave Room</button>
+          </div>
+        </div>
+        <button id="recompute-room">Recompute Compatibility</button>
+        <div id="room-status" class="status-badge muted">Not connected to a room</div>
+        <div id="participant-list" style="margin-top:10px;"></div>
+      </section>
+
       <div class="row">
         <section class="panel">
           <h2>Now Playing</h2>
@@ -147,6 +210,28 @@
           <div id="recommendations"></div>
         </section>
       </div>
+
+      <div class="row">
+        <section class="panel">
+          <h2>Compatibility</h2>
+          <div id="compatibility"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Taste Horoscope</h2>
+          <div id="horoscope"></div>
+        </section>
+      </div>
+
+      <section class="panel">
+        <h2>Both Of You Might Like</h2>
+        <div id="mutual-recommendations"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Now Playing Comparison</h2>
+        <div id="now-playing-compare"></div>
+      </section>
 
       <section class="panel">
         <h2>Debug</h2>

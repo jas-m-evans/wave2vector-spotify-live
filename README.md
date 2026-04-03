@@ -1,8 +1,10 @@
-# Wave2Vector Spotify Live (Starter Repo)
+# Wave2Vector Spotify Live
 
-This repo is a starting implementation for Spotify-connected, real-time similarity recommendations **without downloading Spotify audio files**.
+A realtime Spotify taste compatibility app where two people join a LiveKit room, compare musical DNA, and get mutual recommendations.
 
-## What this starter includes
+This project intentionally avoids downloading or transporting raw Spotify audio. It uses Spotify metadata, now-playing state, preview URLs, cached feature vectors, and Spotify audio features.
+
+## What this includes
 
 - Spotify OAuth login flow
 - Session + token refresh handling
@@ -13,11 +15,19 @@ This repo is a starting implementation for Spotify-connected, real-time similari
 - Blended reranking (now-playing similarity + taste affinity)
 - Diversity-aware reranking to reduce near-duplicate suggestions
 - Explainability tags showing closest matching audio features
-- Browser UI for testing login, seeding, polling, and recommendations
+- Browser UI for solo flow testing
+- LiveKit-backed two-user room/session mode
+- Room-level compatibility scoring + grounded taste horoscope summary
+- Room-level mutual recommendation ranking with fairness balancing
+- Local JSON persistence for room events and snapshots
 
-## Why this architecture
+## Architecture note (important)
 
-Spotify playback streams are not available as raw WAV/PCM for extraction in your app. This starter uses Spotify metadata and audio features to build vectors and deliver live recommendations legally and practically.
+Spotify playback streams are not available as raw WAV/PCM for extraction in your app. In this repo, LiveKit is used only as a realtime room/session layer for exchanging app-level state between users.
+
+- Spotify audio is not proxied through LiveKit
+- Spotify audio is not recorded or downloaded
+- Compatibility and recommendations are computed from metadata and vectors
 
 ## Quick start
 
@@ -30,67 +40,112 @@ cp .env.example .env
 ```
 
 4. Fill in `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET`.
-5. Install and run:
+5. Keep or edit LiveKit dev defaults in `.env`:
+
+```bash
+LIVEKIT_URL=ws://127.0.0.1:7880
+LIVEKIT_API_KEY=devkey
+LIVEKIT_API_SECRET=secret
+```
+
+6. Start a local LiveKit server in dev mode (free), for example:
+
+```bash
+docker run --rm -p 7880:7880 -p 7881:7881/tcp -e LIVEKIT_KEYS="devkey: secret" livekit/livekit-server --dev --bind 0.0.0.0
+```
+
+7. Install and run app:
 
 ```bash
 npm install
 npm run dev
 ```
 
-6. Open `http://localhost:8787`.
+8. Open `http://localhost:8787`.
 
 ## Easy testing (fast path)
 
-Run this one command:
+Run:
 
 ```bash
 npm run test:easy
 ```
 
-What it does:
+It performs:
 
-- Type checks the repo
-- Builds the TypeScript server
-- Starts the built server briefly
-- Verifies `/health` works
-- Verifies protected routes correctly return `401` when not logged in
+- Type check
+- Build
+- Smoke check for `/health`
+- Smoke check that protected routes return `401` without auth
 
-This gives you a quick confidence pass before doing Spotify auth.
+## Solo flow (unchanged)
 
-## Free hosting for browser demo (Render)
+1. Click **Connect Spotify**
+2. Click **Seed famous-song feature cache**
+3. Click **Refresh taste profile**
+4. Play a track in Spotify and click **Refresh now playing + recs**
+5. Optionally click **Start live polling**
+6. Tune controls:
+- `Diversity`
+- `Taste weight`
+- `Recommendation count`
 
-This repo includes [render.yaml](render.yaml) so you can deploy quickly on Render's free web service.
+## Two-user room flow
 
-1. Push this repo to GitHub.
-2. In Render, click **New +** -> **Blueprint** and select this repository.
-3. Set required env vars in Render:
-	- `SPOTIFY_CLIENT_ID`
-	- `SPOTIFY_CLIENT_SECRET`
-	- `SPOTIFY_REDIRECT_URI` (set this to `https://YOUR-RENDER-URL/auth/spotify/callback`)
-4. In Spotify Developer Dashboard, add the same redirect URI.
-5. Deploy and open your Render URL.
+1. User A authenticates with Spotify.
+2. User A joins/creates a room by name.
+3. User B authenticates with Spotify (second browser profile/window/device).
+4. User B joins the same room name.
+5. Each user shares taste profile and optional now-playing state.
+6. Once both users are present with taste profiles, room analytics populate automatically.
 
-Notes:
+Room mode UI shows:
 
-- Free tier may spin down when idle (first request can be slow).
-- Cookies are set with `SameSite=Lax` and secure mode in production.
-- Sessions are currently in-memory, so users will re-auth after restart/redeploy.
+- Room status and connected participants
+- Each participant's now-playing snapshot (if available)
+- Compatibility score meter and similarity label
+- Strong shared traits + biggest differences
+- Taste horoscope summary grounded in real feature deltas
+- Mutual recommendations ranked for shared appeal
 
-## Full manual flow (Spotify connected)
+## Compatibility engine (deterministic)
 
-1. Start app: `npm run dev`
-2. Open `http://localhost:8787`
-3. Click **Connect Spotify**
-4. Click **Seed famous-song feature cache**
-5. Click **Refresh taste profile**
-6. Play a track in Spotify and click **Refresh now playing + recs**
-7. Optionally click **Start live polling** for auto-refresh every 4s
-8. Tune recommendation behavior live:
-	- **Diversity**: higher gives more varied results
-	- **Taste weight**: higher leans toward your long-term profile
-	- **Recommendation count**: adjusts number of returned cards
+At minimum it computes:
+
+- Cosine similarity between user taste vectors
+- Top shared feature affinities
+- Biggest disagreement features
+- Optional current-track closeness if both now-playing vectors exist
+
+It returns:
+
+- `overallScore` (0-100)
+- `similarityLabel`
+- `strongestSharedTraits`
+- `biggestDifferences`
+- `currentTrackComparison` (optional)
+- `explanation` (playful but explainable)
+
+## Mutual recommendation engine
+
+For a 2-user room:
+
+- Build a joint vector from user A + B taste vectors
+- Optionally blend now-playing vectors with small weight
+- Score library candidates for user A, user B, and joint fit
+- Apply fairness penalty so picks do not heavily favor one side
+- Return ranked tracks with reason tags
+
+Reason tags include examples like:
+
+- `balanced fit for both`
+- `shared energy`
+- `similar valence`
+- `bridges acousticness gap`
 
 ## API endpoints
+
+Existing:
 
 - `GET /health`
 - `GET /auth/spotify/login`
@@ -102,24 +157,49 @@ Notes:
 - `POST /api/profile/taste-refresh`
 - `GET /api/recommendations/live?k=5&diversity=0.2&tasteWeight=0.25`
 
-### Recommendation controls and output
+Room mode:
 
-- `k` (default `5`): number of recommendations
-- `diversity` (default `0.2`, range `0..1`): applies MMR-style reranking
-	- `0` favors pure similarity
-	- `1` strongly favors dissimilarity among picks
-- `tasteWeight` (default `0.25`, range `0..1`): blend weight for profile affinity
+- `POST /api/livekit/token`
+- `POST /api/rooms/:roomName/share-state`
+- `POST /api/rooms/:roomName/leave`
+- `GET /api/rooms/:roomName/state`
+- `GET /api/rooms/:roomName/compatibility`
+- `GET /api/rooms/:roomName/mutual-recommendations?k=10`
 
-Each recommendation now includes:
+### LiveKit token endpoint
 
-- `similarity` (target-track similarity)
-- `tasteSimilarity` (profile affinity, when available)
-- `blendedScore` (combined score)
-- `reasons` (top matching feature tags, shown in UI chips)
+- `POST /api/livekit/token`
+- Body: `{ roomName: string, participantName: string }`
+- Returns: `{ url, roomName, participantName, token }`
 
-## Next implementation steps
+## Local persistence
 
-- Move session/token store to Redis/Postgres
-- Persist track feature cache in Postgres with pgvector
-- Add background workers for feature hydration
-- Build richer visualizer tied to Spotify section/beat timing
+Room mode writes local JSON files:
+
+- `.data/livekit-events.json` (append-only event log)
+- `.data/livekit-room-state.json` (latest room snapshots)
+
+Persisted room events:
+
+- `room_joined`
+- `room_left`
+- `taste_profile_shared`
+- `now_playing_shared`
+- `compatibility_computed`
+- `mutual_recommendations_computed`
+
+## Local 2-user test method
+
+Use either:
+
+- Two browser windows with separate profiles
+- Two devices on the same network
+
+Test steps:
+
+1. Start LiveKit locally
+2. Start this app
+3. Authenticate both users separately
+4. Join same room name from both clients
+5. Confirm participants appear
+6. Confirm compatibility panel and mutual recommendations update
