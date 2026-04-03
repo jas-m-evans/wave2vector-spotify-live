@@ -20,3 +20,9 @@ services:
         sync: false
       - key: SPOTIFY_REDIRECT_URI
         sync: false
+      - key: LIVEKIT_URL
+        sync: false
+      - key: LIVEKIT_API_KEY
+        sync: false
+      - key: LIVEKIT_API_SECRET
+        sync: false
