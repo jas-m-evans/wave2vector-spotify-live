@@ -10,6 +10,10 @@ const tasteWeightInput = document.getElementById("taste-weight");
 const kInput = document.getElementById("k");
 const diversityValueEl = document.getElementById("diversity-value");
 const tasteWeightValueEl = document.getElementById("taste-weight-value");
+const loginBtn = document.getElementById("login");
+const seedBtn = document.getElementById("seed");
+const tasteBtn = document.getElementById("taste");
+const refreshBtn = document.getElementById("refresh");
 
 const roomNameInput = document.getElementById("room-name");
 const participantNameInput = document.getElementById("participant-name");
@@ -33,10 +37,18 @@ let localSharedState = {
   tasteProfile: null,
   nowPlayingState: null,
 };
-const remoteStateByIdentity = new Map();
 
 participantNameInput.value = localStorage.getItem("participantName") ?? "";
 roomNameInput.value = localStorage.getItem("roomName") ?? "";
+
+function setDebug(payload) {
+  debugEl.textContent = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
+}
+
+function showFriendlyError(message, details) {
+  nowEl.innerHTML = `<p class="muted">${message}</p>`;
+  setDebug(details ?? message);
+}
 
 function updateControlLabels() {
   diversityValueEl.textContent = Number(diversityInput.value).toFixed(2);
@@ -45,19 +57,30 @@ function updateControlLabels() {
 
 function setRoomStatus(text, isActive = false) {
   roomStatusEl.textContent = text;
- 
+  roomStatusEl.classList.toggle("muted", !isActive);
+}
 
 function renderAuthStatus(profile) {
-  if (!profile.authenticated) {
-    authStatusEl.innerHTML = `
-      <span class="muted">Not connected to Spotify.</span>
-      <button onclick="window.location.href='/auth/spotify/login'" style="margin-left:8px;">Connect Spotify</button>
-    `;
+  if (!authStatusEl) {
     return;
   }
+
+  if (!profile?.authenticated) {
+    authStatusEl.innerHTML = `
+      <span class="muted">Not connected to Spotify.</span>
+      <button id="auth-banner-login" style="margin-left:8px;">Connect Spotify</button>
+    `;
+    const bannerLogin = document.getElementById("auth-banner-login");
+    bannerLogin?.addEventListener("click", () => {
+      window.location.href = "/auth/spotify/login";
+    });
+    return;
+  }
+
   const avatar = profile.imageUrl
     ? `<img src="${profile.imageUrl}" class="auth-avatar" alt="avatar" />`
     : "";
+
   authStatusEl.innerHTML = `
     ${avatar}
     <span>
@@ -68,23 +91,9 @@ function renderAuthStatus(profile) {
   `;
 }
 
-async function checkAuth() {
-  const res = await fetch("/api/me");
-  const profile = await res.json();
-  renderAuthStatus(profile);
-  if (profile.authenticated) {
-    await refresh();
-  } else {
-    nowEl.innerHTML = `<p class="muted">Connect Spotify above to get started.</p>`;
-    recEl.innerHTML = `<p class="muted">Recommendations appear after connecting Spotify.</p>`;
-    profileEl.innerHTML = `<p class="muted">No taste profile yet. Connect Spotify first.</p>`;
-  }
-} roomStatusEl.classList.toggle("muted", !isActive);
-}
-
 function renderNowPlaying(now) {
   if (!now || !now.trackId) {
-    nowEl.innerHTML = `<p class=\"muted\">No active playback detected.</p>`;
+    nowEl.innerHTML = `<p class="muted">No active playback detected.</p>`;
     return;
   }
 
@@ -103,7 +112,7 @@ function renderNowPlaying(now) {
 
 function renderRecommendations(items) {
   if (!items?.length) {
-    recEl.innerHTML = `<p class=\"muted\">No recommendations yet. Seed library first.</p>`;
+    recEl.innerHTML = `<p class="muted">No recommendations yet. Seed library and refresh taste profile first.</p>`;
     return;
   }
 
@@ -116,8 +125,8 @@ function renderRecommendations(items) {
           <strong>${item.name}</strong><br />
           <span class="muted">${item.artist}</span><br />
           <span class="muted">Target ${(item.similarity * 100).toFixed(1)}% | Blended ${(item.blendedScore * 100).toFixed(1)}%</span>
-          ${typeof item.tasteSimilarity === "number" ? `<br /><span class=\"muted\">Taste ${(item.tasteSimilarity * 100).toFixed(1)}%</span>` : ""}
-          ${item.reasons?.length ? `<div class=\"chip-row\">${item.reasons.map((reason) => `<span class=\"chip\">${reason}</span>`).join("")}</div>` : ""}
+          ${typeof item.tasteSimilarity === "number" ? `<br /><span class="muted">Taste ${(item.tasteSimilarity * 100).toFixed(1)}%</span>` : ""}
+          ${item.reasons?.length ? `<div class="chip-row">${item.reasons.map((reason) => `<span class="chip">${reason}</span>`).join("")}</div>` : ""}
           ${item.previewUrl ? `<br /><audio controls preload="none" src="${item.previewUrl}"></audio>` : ""}
         </div>
       </div>
@@ -126,12 +135,26 @@ function renderRecommendations(items) {
     .join("");
 }
 
+function renderProfile(profile) {
+  if (!profile || !profile.hasTasteVector) {
+    profileEl.innerHTML = `<p class="muted">No taste profile yet. Click Refresh taste profile.</p>`;
+    return;
+  }
+
+  const updated = profile.updatedAt ? new Date(profile.updatedAt).toLocaleString() : "unknown";
+  profileEl.innerHTML = `
+    <p><strong>Vector dims:</strong> ${profile.dims}</p>
+    <p class="muted"><strong>Updated:</strong> ${updated}</p>
+  `;
+}
+
 function renderParticipants(room) {
   const participants = room?.participants ?? [];
   if (!participants.length) {
     participantListEl.innerHTML = `<p class="muted">No participants yet.</p>`;
     return;
   }
+
   participantListEl.innerHTML = participants
     .map((participant) => {
       const now = participant.nowPlayingState?.nowPlaying;
@@ -163,10 +186,7 @@ function renderCompatibility(payload) {
     <p class="muted">Biggest differences: ${(payload.biggestDifferences ?? []).join(", ") || "n/a"}</p>
   `;
 
-  horoscopeEl.innerHTML = `
-    <p>${payload.explanation ?? "No explanation yet."}</p>
-  `;
-
+  horoscopeEl.innerHTML = `<p>${payload.explanation ?? "No explanation yet."}</p>`;
   nowCompareEl.innerHTML = payload.currentTrackComparison
     ? `<p>${payload.currentTrackComparison}</p>`
     : `<p class="muted">No current-track comparison yet.</p>`;
@@ -174,7 +194,7 @@ function renderCompatibility(payload) {
 
 function renderMutualRecommendations(items) {
   if (!items?.length) {
-    mutualRecEl.innerHTML = `<p class="muted">Mutual recommendations will appear once both users are active in the room.</p>`;
+    mutualRecEl.innerHTML = `<p class="muted">Mutual recommendations appear when two users are active in the room.</p>`;
     return;
   }
 
@@ -185,11 +205,7 @@ function renderMutualRecommendations(items) {
         ${item.artworkUrl ? `<img src="${item.artworkUrl}" alt="art" />` : ""}
         <div>
           <strong>${item.name}</strong><br />
-    if (response.status === 429) {
-      nowEl.innerHTML = `<p class="muted">Spotify rate limit hit — please wait 30 seconds and try again.</p>`;
-    } else {
-      nowEl.innerHTML = `<p class="muted">${payload.error ?? "Unauthorized"}</p>`;
-    }
+          <span class="muted">${item.artist}</span><br />
           <span class="muted">Joint ${(item.jointScore * 100).toFixed(1)}% | A ${(item.scoreForA * 100).toFixed(1)}% | B ${(item.scoreForB * 100).toFixed(1)}%</span>
           ${item.reasonTags?.length ? `<div class="chip-row">${item.reasonTags.map((reason) => `<span class="chip">${reason}</span>`).join("")}</div>` : ""}
           ${item.previewUrl ? `<br /><audio controls preload="none" src="${item.previewUrl}"></audio>` : ""}
@@ -200,42 +216,56 @@ function renderMutualRecommendations(items) {
     .join("");
 }
 
-function renderProfile(profile) {
-  if (!profile || !profile.hasTasteVector) {
-    profileEl.innerHTML = `<p class=\"muted\">No taste profile yet. Click refresh taste profile.</p>`;
-    return;
-  }
-
-  const updated = profile.updatedAt ? new Date(profile.updatedAt).toLocaleString() : "unknown";
-  profileEl.innerHTML = `
-    <p><strong>Vector dims:</strong> ${profile.dims}</p>
-    <p class="muted"><strong>Updated:</strong> ${updated}</p>
-  `;
-}
-
 async function refresh() {
   const params = new URLSearchParams({
     k: String(Math.max(1, Number(kInput.value || 5))),
     diversity: String(Number(diversityInput.value || 0.2)),
     tasteWeight: String(Number(tasteWeightInput.value || 0.25)),
   });
+
   const response = await fetch(`/api/recommendations/live?${params.toString()}`);
   const payload = await response.json();
-  debugEl.textContent = JSON.stringify(payload, null, 2);
+  setDebug(payload);
+
   if (!response.ok) {
-    nowEl.innerHTML = `<p class=\"muted\">${payload.error ?? "Unauthorized"}</p>`;
+    if (response.status === 429) {
+      showFriendlyError("Spotify rate limit hit. Please wait 30 seconds and try again.", payload);
+      return;
+    }
+    showFriendlyError(payload.error ?? "Authentication required. Please connect Spotify.", payload);
     recEl.innerHTML = "";
     profileEl.innerHTML = "";
     return;
   }
+
   renderNowPlaying(payload.nowPlaying);
   renderRecommendations(payload.recommendations);
   renderProfile(payload.profile);
+
   if (payload.controls) {
     diversityInput.value = String(payload.controls.diversity);
     tasteWeightInput.value = String(payload.controls.tasteWeight);
     kInput.value = String(payload.controls.k);
     updateControlLabels();
+  }
+}
+
+async function checkAuth() {
+  try {
+    const res = await fetch("/api/me");
+    const profile = await res.json();
+    renderAuthStatus(profile);
+
+    if (!profile.authenticated) {
+      nowEl.innerHTML = `<p class="muted">Connect Spotify to get started.</p>`;
+      recEl.innerHTML = `<p class="muted">Recommendations appear after connecting Spotify.</p>`;
+      profileEl.innerHTML = `<p class="muted">No taste profile yet. Connect Spotify first.</p>`;
+      return;
+    }
+
+    await refresh();
+  } catch (error) {
+    showFriendlyError("Could not check Spotify auth state.", String(error));
   }
 }
 
@@ -270,16 +300,6 @@ async function publishDataMessage(message) {
   await livekitRoom.localParticipant.publishData(payload, { reliable: true });
 }
 
-function ingestRemoteMessage(raw) {
-  if (!raw || typeof raw !== "object") {
-    return;
-  }
-  if (!raw.participantName) {
-    return;
-  }
-  remoteStateByIdentity.set(raw.participantName, raw);
-}
-
 async function shareLocalStateViaBackend() {
   if (!activeRoomName || !activeParticipantName) {
     return;
@@ -290,6 +310,7 @@ async function shareLocalStateViaBackend() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ participantName: activeParticipantName, includeNowPlaying: true }),
   });
+
   const payload = await response.json();
   if (!response.ok) {
     throw new Error(payload.error ?? "Failed to share room state");
@@ -308,6 +329,7 @@ async function shareLocalStateViaBackend() {
 async function joinRoom() {
   const roomName = roomNameInput.value.trim();
   const participantName = participantNameInput.value.trim();
+
   if (!roomName || !participantName) {
     setRoomStatus("Room name and display name are required");
     return;
@@ -322,6 +344,7 @@ async function joinRoom() {
     body: JSON.stringify({ roomName, participantName }),
   });
   const tokenPayload = await tokenRes.json();
+
   if (!tokenRes.ok) {
     throw new Error(tokenPayload.error ?? "Failed to get LiveKit token");
   }
@@ -331,30 +354,14 @@ async function joinRoom() {
   }
 
   livekitRoom = new Room({ adaptiveStream: true, dynacast: true });
-  livekitRoom.on(RoomEvent.DataReceived, (payload, participant) => {
-    try {
-      const parsed = JSON.parse(new TextDecoder().decode(payload));
-      ingestRemoteMessage({ ...parsed, _from: participant?.name ?? "unknown" });
-    } catch {
-      // Ignore malformed packets from peers.
-    }
-  });
-
   livekitRoom.on(RoomEvent.ParticipantConnected, () => {
-    refreshRoomPanels().catch((error) => {
-      debugEl.textContent = String(error);
-    });
+    refreshRoomPanels().catch((error) => setDebug(String(error)));
   });
-
   livekitRoom.on(RoomEvent.ParticipantDisconnected, () => {
-    refreshRoomPanels().catch((error) => {
-      debugEl.textContent = String(error);
-    });
+    refreshRoomPanels().catch((error) => setDebug(String(error)));
   });
 
-  await livekitRoom.connect(tokenPayload.url, tokenPayload.token, {
-    autoSubscribe: true,
-  });
+  await livekitRoom.connect(tokenPayload.url, tokenPayload.token, { autoSubscribe: true });
 
   activeRoomName = tokenPayload.roomName;
   activeParticipantName = tokenPayload.participantName;
@@ -374,54 +381,67 @@ async function leaveRoom() {
     await livekitRoom.disconnect();
     livekitRoom = null;
   }
+
   await fetch(`/api/rooms/${encodeURIComponent(roomName)}/leave`, { method: "POST" });
+
   activeRoomName = "";
   activeParticipantName = "";
-  remoteStateByIdentity.clear();
   localSharedState = { tasteProfile: null, nowPlayingState: null };
   setRoomStatus("Not connected to a room", false);
   await refreshRoomPanels();
 }
 
-document.getElementById("login").addEventListener("click", () => {
+loginBtn.addEventListener("click", () => {
   window.location.href = "/auth/spotify/login";
 });
 
-document.getElementById("seed").addEventListener("click", async () => {
+seedBtn.addEventListener("click", async () => {
   const response = await fetch("/api/library/seed-famous", { method: "POST" });
   const payload = await response.json();
-  debugEl.textContent = JSON.stringify(payload, null, 2);
-  if (response.ok) {
-    await refresh();
-  }
-});
-
-document.getElestatus === 429) {
-    profileEl.innerHTML = `<p class="muted">Spotify rate limit hit — please wait 30 seconds and try again.</p>`;
+  setDebug(payload);
+  if (!response.ok) {
+    showFriendlyError(payload.error ?? "Could not seed library", payload);
     return;
   }
-  if (response.mentById("taste").addEventListener("click", async () => {
-  const response = await fetch("/api/profile/taste-refresh", { method: "POST" });
-  const payload = await response.json();
-  debugEl.textContent = JSON.stringify(payload, null, 2);
-  if (response.ok) {
-    renderProfile({
-      hasTasteVector: payload.hasTasteVector,
-      dims: payload.dims,
-      updatedAt: payload.updatedAt,
-    });
-    await refresh();
-  }
+  await refresh();
 });
 
-document.getElementById("refresh").addEventListener("click", refresh);
+tasteBtn.addEventListener("click", async () => {
+  const response = await fetch("/api/profile/taste-refresh", { method: "POST" });
+  const payload = await response.json();
+  setDebug(payload);
+
+  if (response.status === 429) {
+    profileEl.innerHTML = `<p class="muted">Spotify rate limit hit. Please wait 30 seconds and try again.</p>`;
+    return;
+  }
+
+  if (!response.ok) {
+    profileEl.innerHTML = `<p class="muted">${payload.error ?? "Could not refresh taste profile."}</p>`;
+    return;
+  }
+
+  renderProfile({
+    hasTasteVector: payload.hasTasteVector,
+    dims: payload.dims,
+    updatedAt: payload.updatedAt,
+  });
+  await refresh();
+});
+
+refreshBtn.addEventListener("click", () => {
+  refresh().catch((error) => showFriendlyError("Refresh failed", String(error)));
+});
+
 diversityInput.addEventListener("input", updateControlLabels);
 tasteWeightInput.addEventListener("input", updateControlLabels);
+
 joinRoomBtn.addEventListener("click", async () => {
   try {
     await joinRoom();
   } catch (error) {
     setRoomStatus(error instanceof Error ? error.message : String(error));
+    setDebug(String(error));
   }
 });
 
@@ -430,6 +450,7 @@ leaveRoomBtn.addEventListener("click", async () => {
     await leaveRoom();
   } catch (error) {
     setRoomStatus(error instanceof Error ? error.message : String(error));
+    setDebug(String(error));
   }
 });
 
@@ -438,13 +459,14 @@ recomputeRoomBtn.addEventListener("click", async () => {
     await shareLocalStateViaBackend();
     await refreshRoomPanels();
   } catch (error) {
-    debugEl.textContent = String(error);
+    setDebug(String(error));
   }
 });
 
 pollBtn.addEventListener("click", async () => {
   polling = !polling;
   pollBtn.textContent = polling ? "Stop live polling" : "Start live polling";
+
   if (polling) {
     await refresh();
     timer = setInterval(async () => {
@@ -456,16 +478,13 @@ pollBtn.addEventListener("click", async () => {
     }, 4000);
   } else if (timer) {
     clearInterval(timer);
-checkAutmer = null;
+    timer = null;
   }
 });
 
-refresh().catch((err) => {
-  debugEl.textContent = String(err);
+checkAuth().catch((error) => {
+  showFriendlyError("Failed to initialize app", String(error));
 });
 
-refreshRoomPanels().catch((err) => {
-  debugEl.textContent = String(err);
-});
-
+refreshRoomPanels().catch((error) => setDebug(String(error)));
 updateControlLabels();
