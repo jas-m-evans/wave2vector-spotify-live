@@ -31,6 +31,7 @@ let polling = false;
 let timer = null;
 let activeRoomName = "";
 let activeParticipantName = "";
+let spotifyDisplayName = "";
 let livekitRoom = null;
 let localSharedState = {
   tasteProfile: null,
@@ -95,6 +96,11 @@ function renderAuthStatus(profile) {
       <span class="muted" style="font-size:0.85rem;"> connected to Spotify</span>
     </span>
   `;
+
+  spotifyDisplayName = profile.displayName ?? "";
+  if (!participantNameInput.value.trim() || participantNameInput.value.trim().toLowerCase() === "alex") {
+    participantNameInput.value = spotifyDisplayName;
+  }
 }
 
 function renderNowPlaying(now) {
@@ -143,7 +149,7 @@ function renderRecommendations(items) {
 
 function renderProfile(profile) {
   if (!profile || !profile.hasTasteVector) {
-    profileEl.innerHTML = `<p class="muted">No taste profile yet. Click Refresh taste profile.</p>`;
+    profileEl.innerHTML = `<p class="muted">No taste profile yet. Click Sync With Spotify to pull your top tracks.</p>`;
     return;
   }
 
@@ -368,10 +374,10 @@ async function shareLocalStateViaBackend() {
 
 async function joinRoom() {
   const roomName = roomNameInput.value.trim();
-  const participantName = participantNameInput.value.trim();
+  const participantName = participantNameInput.value.trim() || spotifyDisplayName;
 
   if (!roomName || !participantName) {
-    setRoomStatus("Room name and display name are required");
+    setRoomStatus("Enter a room name. Display name auto-fills from Spotify, or type one.");
     return;
   }
 

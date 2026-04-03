@@ -266,7 +266,25 @@ function averageVectors(vectors: number[][]): number[] | undefined {
 }
 
 async function refreshTasteProfile(session: SessionRecord): Promise<{ sampled: number; cached: number }> {
-  const topIds = await fetchTopTrackIds(session.tokens.accessToken, 25);
+  const mergedTopIds: string[] = [];
+  const seen = new Set<string>();
+  const windows: Array<"short_term" | "medium_term" | "long_term"> = [
+    "short_term",
+    "medium_term",
+    "long_term",
+  ];
+
+  for (const window of windows) {
+    const ids = await fetchTopTrackIds(session.tokens.accessToken, 20, window);
+    for (const id of ids) {
+      if (!seen.has(id)) {
+        seen.add(id);
+        mergedTopIds.push(id);
+      }
+    }
+  }
+
+  const topIds = mergedTopIds.slice(0, 40);
   const vectors: number[][] = [];
 
   for (const trackId of topIds) {
@@ -443,7 +461,7 @@ app.post("/api/sync/bootstrap", async (req, res) => {
     const body = bootstrapSyncBodySchema.safeParse(req.body);
     const force = body.success ? body.data.force ?? false : false;
 
-    if (session.bootstrapCompletedAt && !force) {
+    if (session.bootstrapCompletedAt && session.tasteVector?.length && !force) {
       return res.json({
         skipped: true,
         reason: "already_bootstrapped",
@@ -702,7 +720,21 @@ app.get("/api/recommendations/live", async (req, res) => {
     }
 
     if (!nowPlaying.trackId) {
-      return res.json({ nowPlaying, recommendations: [] });
+      return res.json({
+        nowPlaying,
+        recommendations: [],
+        profile: {
+          hasTasteVector: Boolean(session.tasteVector),
+          dims: session.tasteVector?.length ?? 0,
+          updatedAt: session.tasteUpdatedAt,
+        },
+        controls: {
+          k: Math.max(1, k),
+          diversity,
+          tasteWeight,
+        },
+        warning: "No active playback detected. Play a track to generate live recommendations.",
+      });
     }
 
     const target = await cacheTrack(nowPlaying.trackId, session.tokens);

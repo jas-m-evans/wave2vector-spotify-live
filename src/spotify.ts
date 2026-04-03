@@ -191,8 +191,12 @@ export async function fetchNowPlaying(accessToken: string): Promise<NowPlayingRe
   };
 }
 
-export async function fetchTopTrackIds(accessToken: string, limit = 30): Promise<string[]> {
-  const response = await spotifyGet(`/me/top/tracks?time_range=medium_term&limit=${limit}`, accessToken);
+export async function fetchTopTrackIds(
+  accessToken: string,
+  limit = 30,
+  timeRange: "short_term" | "medium_term" | "long_term" = "medium_term",
+): Promise<string[]> {
+  const response = await spotifyGet(`/me/top/tracks?time_range=${timeRange}&limit=${limit}`, accessToken);
   if (!response.ok) {
     throw new Error(`Top tracks request failed (${response.status}).`);
   }
