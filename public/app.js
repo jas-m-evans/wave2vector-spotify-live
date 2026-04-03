@@ -22,6 +22,7 @@ const compatibilityEl = document.getElementById("compatibility");
 const horoscopeEl = document.getElementById("horoscope");
 const mutualRecEl = document.getElementById("mutual-recommendations");
 const nowCompareEl = document.getElementById("now-playing-compare");
+const authStatusEl = document.getElementById("auth-status-content");
 
 let polling = false;
 let timer = null;
@@ -44,7 +45,41 @@ function updateControlLabels() {
 
 function setRoomStatus(text, isActive = false) {
   roomStatusEl.textContent = text;
-  roomStatusEl.classList.toggle("muted", !isActive);
+ 
+
+function renderAuthStatus(profile) {
+  if (!profile.authenticated) {
+    authStatusEl.innerHTML = `
+      <span class="muted">Not connected to Spotify.</span>
+      <button onclick="window.location.href='/auth/spotify/login'" style="margin-left:8px;">Connect Spotify</button>
+    `;
+    return;
+  }
+  const avatar = profile.imageUrl
+    ? `<img src="${profile.imageUrl}" class="auth-avatar" alt="avatar" />`
+    : "";
+  authStatusEl.innerHTML = `
+    ${avatar}
+    <span>
+      <strong>${profile.displayName}</strong>
+      <span class="connected-dot"></span>
+      <span class="muted" style="font-size:0.85rem;"> connected to Spotify</span>
+    </span>
+  `;
+}
+
+async function checkAuth() {
+  const res = await fetch("/api/me");
+  const profile = await res.json();
+  renderAuthStatus(profile);
+  if (profile.authenticated) {
+    await refresh();
+  } else {
+    nowEl.innerHTML = `<p class="muted">Connect Spotify above to get started.</p>`;
+    recEl.innerHTML = `<p class="muted">Recommendations appear after connecting Spotify.</p>`;
+    profileEl.innerHTML = `<p class="muted">No taste profile yet. Connect Spotify first.</p>`;
+  }
+} roomStatusEl.classList.toggle("muted", !isActive);
 }
 
 function renderNowPlaying(now) {
@@ -150,7 +185,11 @@ function renderMutualRecommendations(items) {
         ${item.artworkUrl ? `<img src="${item.artworkUrl}" alt="art" />` : ""}
         <div>
           <strong>${item.name}</strong><br />
-          <span class="muted">${item.artist}</span><br />
+    if (response.status === 429) {
+      nowEl.innerHTML = `<p class="muted">Spotify rate limit hit — please wait 30 seconds and try again.</p>`;
+    } else {
+      nowEl.innerHTML = `<p class="muted">${payload.error ?? "Unauthorized"}</p>`;
+    }
           <span class="muted">Joint ${(item.jointScore * 100).toFixed(1)}% | A ${(item.scoreForA * 100).toFixed(1)}% | B ${(item.scoreForB * 100).toFixed(1)}%</span>
           ${item.reasonTags?.length ? `<div class="chip-row">${item.reasonTags.map((reason) => `<span class="chip">${reason}</span>`).join("")}</div>` : ""}
           ${item.previewUrl ? `<br /><audio controls preload="none" src="${item.previewUrl}"></audio>` : ""}
@@ -357,7 +396,11 @@ document.getElementById("seed").addEventListener("click", async () => {
   }
 });
 
-document.getElementById("taste").addEventListener("click", async () => {
+document.getElestatus === 429) {
+    profileEl.innerHTML = `<p class="muted">Spotify rate limit hit — please wait 30 seconds and try again.</p>`;
+    return;
+  }
+  if (response.mentById("taste").addEventListener("click", async () => {
   const response = await fetch("/api/profile/taste-refresh", { method: "POST" });
   const payload = await response.json();
   debugEl.textContent = JSON.stringify(payload, null, 2);
@@ -413,7 +456,7 @@ pollBtn.addEventListener("click", async () => {
     }, 4000);
   } else if (timer) {
     clearInterval(timer);
-    timer = null;
+checkAutmer = null;
   }
 });
 

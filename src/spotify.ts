@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { z } from "zod";
-import { NowPlayingResponse, SpotifyTokens, TrackFeatureVector } from "./types.js";
+import { NowPlayingResponse, SpotifyProfile, SpotifyTokens, TrackFeatureVector } from "./types.js";
 
 const tokenSchema = z.object({
   access_token: z.string(),
@@ -200,6 +200,23 @@ export async function fetchTopTrackIds(accessToken: string, limit = 30): Promise
   return (payload.items ?? [])
     .map((item) => item.id)
     .filter((id): id is string => Boolean(id));
+}
+
+export async function fetchSpotifyProfile(accessToken: string): Promise<SpotifyProfile> {
+  const res = await spotifyGet("/me", accessToken);
+  if (!res.ok) {
+    throw new Error(`Spotify profile fetch failed (${res.status}).`);
+  }
+  const data = (await res.json()) as {
+    id: string;
+    display_name?: string;
+    images?: Array<{ url: string }>;
+  };
+  return {
+    id: data.id,
+    displayName: data.display_name ?? data.id,
+    imageUrl: data.images?.[0]?.url,
+  };
 }
 
 export async function fetchTrackVector(trackId: string, accessToken: string): Promise<TrackFeatureVector> {

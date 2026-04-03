@@ -23,6 +23,7 @@ import {
   createSessionId,
   createStateToken,
   exchangeCodeForToken,
+  fetchSpotifyProfile,
   fetchTopTrackIds,
   fetchNowPlaying,
   fetchTrackVector,
@@ -391,7 +392,8 @@ app.post("/api/profile/taste-refresh", async (req, res) => {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    return res.status(401).json({ error: message });
+    const status = message.includes("429") ? 429 : 401;
+    return res.status(status).json({ error: message });
   }
 });
 
@@ -406,6 +408,16 @@ app.get("/api/profile", async (req, res) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return res.status(401).json({ error: message });
+  }
+});
+
+app.get("/api/me", async (req, res) => {
+  try {
+    const session = await getActiveSession(req);
+    const profile = await fetchSpotifyProfile(session.tokens.accessToken);
+    return res.json({ authenticated: true, ...profile });
+  } catch {
+    return res.json({ authenticated: false });
   }
 });
 

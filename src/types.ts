@@ -46,6 +46,12 @@ export type NowPlayingResponse = {
   previewUrl?: string;
 };
 
+export type SpotifyProfile = {
+  id: string;
+  displayName: string;
+  imageUrl?: string;
+};
+
 export type SharedTasteProfile = {
   roomName: string;
   participantName: string;
