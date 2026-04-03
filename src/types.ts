@@ -9,6 +9,7 @@ export type SessionRecord = {
   tokens: SpotifyTokens;
   tasteVector?: number[];
   tasteUpdatedAt?: number;
+  bootstrapCompletedAt?: number;
 };
 
 export type LiveKitTokenResponse = {

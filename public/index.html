@@ -6,16 +6,19 @@
     <title>Wave2Vector Spotify Live</title>
     <style>
       :root {
-        --bg: #12151e;
-        --panel: #191f2b;
-        --ink: #edf3ff;
-        --muted: #9ab0d4;
-        --accent: #1db954;
+        --bg: #f2f2f2;
+        --panel: #ffffff;
+        --ink: #111111;
+        --muted: #555555;
+        --accent: #111111;
+        --border: #111111;
       }
       body {
         margin: 0;
-        font-family: Avenir Next, Inter, sans-serif;
-        background: radial-gradient(circle at 10% 5%, #1f2d4d, var(--bg));
+        font-family: "Courier New", "IBM Plex Mono", monospace;
+        background:
+          linear-gradient(45deg, #f2f2f2 25%, #ececec 25%, #ececec 50%, #f2f2f2 50%, #f2f2f2 75%, #ececec 75%, #ececec 100%);
+        background-size: 24px 24px;
         color: var(--ink);
       }
       main {
@@ -25,8 +28,9 @@
       }
       .panel {
         background: var(--panel);
-        border: 1px solid #2b3751;
-        border-radius: 14px;
+        border: 2px solid var(--border);
+        border-radius: 0;
+        box-shadow: 6px 6px 0 #000000;
         padding: 16px;
         margin-bottom: 14px;
       }
@@ -35,20 +39,27 @@
         margin-top: 0;
       }
       button {
-        background: linear-gradient(90deg, #1db954, #38d16e);
-        color: #07120b;
-        border: none;
-        border-radius: 999px;
+        background: #ffffff;
+        color: #111111;
+        border: 2px solid #111111;
+        border-radius: 0;
         font-weight: 700;
         padding: 10px 14px;
         cursor: pointer;
         margin-right: 8px;
         margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      button:hover {
+        background: #111111;
+        color: #ffffff;
       }
       pre {
-        background: #0f1420;
+        background: #ffffff;
+        border: 2px solid #111111;
         padding: 10px;
-        border-radius: 8px;
+        border-radius: 0;
         overflow: auto;
       }
       .row {
@@ -91,12 +102,12 @@
         margin-top: 6px;
       }
       .chip {
-        background: #24324a;
-        border: 1px solid #35517a;
-        border-radius: 999px;
+        background: #ffffff;
+        border: 1px solid #111111;
+        border-radius: 0;
         padding: 3px 8px;
         font-size: 0.8rem;
-        color: #cbe0ff;
+        color: #111111;
       }
       .room-grid {
         display: grid;
@@ -108,29 +119,29 @@
         width: 100%;
         box-sizing: border-box;
         padding: 10px;
-        border-radius: 8px;
-        border: 1px solid #35517a;
-        background: #0f1420;
-        color: var(--ink);
+        border-radius: 0;
+        border: 2px solid #111111;
+        background: #ffffff;
+        color: #111111;
       }
       .status-badge {
         display: inline-block;
-        border-radius: 999px;
-        border: 1px solid #35517a;
+        border-radius: 0;
+        border: 2px solid #111111;
         padding: 4px 10px;
         font-size: 0.8rem;
         margin-top: 10px;
       }
       .score-meter {
         height: 12px;
-        border-radius: 999px;
-        background: #0f1420;
-        border: 1px solid #35517a;
+        border-radius: 0;
+        background: #ffffff;
+        border: 2px solid #111111;
         overflow: hidden;
       }
       .score-fill {
         height: 100%;
-        background: linear-gradient(90deg, #ffd166, #1db954);
+        background: repeating-linear-gradient(90deg, #111111 0 8px, #f2f2f2 8px 16px);
       }
       .auth-banner {
         display: flex;
@@ -142,16 +153,22 @@
         width: 38px;
         height: 38px;
         border-radius: 50%;
-        border: 2px solid #1db954;
+        border: 2px solid #111111;
       }
       .connected-dot {
         display: inline-block;
         width: 8px;
         height: 8px;
-        border-radius: 50%;
-        background: #1db954;
+        border-radius: 0;
+        background: #111111;
         margin-left: 5px;
         vertical-align: middle;
+      }
+      .sync-status {
+        margin-top: 10px;
+        padding: 8px 10px;
+        border: 2px dashed #111111;
+        font-size: 0.88rem;
       }
       @media (max-width: 760px) {
         .row {
@@ -169,17 +186,16 @@
   <body>
     <main>
       <h1>Wave2Vector Spotify Live</h1>
-      <p class="muted">Realtime Spotify taste compatibility. Connect, join a room, compare music DNA.</p>
+      <p class="muted">Realtime Spotify taste compatibility. White-noise visuals, punky vectors, and shared listening DNA.</p>
 
       <div class="panel auth-banner">
         <div id="auth-status-content"><span class="muted">Checking Spotify connection...</span></div>
+        <div id="sync-status" class="sync-status">Waiting for Spotify sync...</div>
       </div>
 
       <div class="panel">
         <button id="login">Connect Spotify</button>
-        <button id="seed">Seed famous-song feature cache</button>
-        <button id="taste">Refresh taste profile</button>
-        <button id="refresh">Refresh now playing + recs</button>
+        <button id="refresh">Sync With Spotify</button>
         <button id="poll">Start live polling</button>
         <div class="control-grid">
           <label>

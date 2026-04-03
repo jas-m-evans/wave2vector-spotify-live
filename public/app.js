@@ -11,9 +11,8 @@ const kInput = document.getElementById("k");
 const diversityValueEl = document.getElementById("diversity-value");
 const tasteWeightValueEl = document.getElementById("taste-weight-value");
 const loginBtn = document.getElementById("login");
-const seedBtn = document.getElementById("seed");
-const tasteBtn = document.getElementById("taste");
 const refreshBtn = document.getElementById("refresh");
+const syncStatusEl = document.getElementById("sync-status");
 
 const roomNameInput = document.getElementById("room-name");
 const participantNameInput = document.getElementById("participant-name");
@@ -48,6 +47,13 @@ function setDebug(payload) {
 function showFriendlyError(message, details) {
   nowEl.innerHTML = `<p class="muted">${message}</p>`;
   setDebug(details ?? message);
+}
+
+function setSyncStatus(message) {
+  if (!syncStatusEl) {
+    return;
+  }
+  syncStatusEl.textContent = message;
 }
 
 function updateControlLabels() {
@@ -227,9 +233,14 @@ async function refresh() {
   const payload = await response.json();
   setDebug(payload);
 
+  if (payload.warning) {
+    setSyncStatus(payload.warning);
+  }
+
   if (!response.ok) {
     if (response.status === 429) {
       showFriendlyError("Spotify rate limit hit. Please wait 30 seconds and try again.", payload);
+      setSyncStatus("Spotify rate-limited requests. Auto-retrying on next sync.");
       return;
     }
     showFriendlyError(payload.error ?? "Authentication required. Please connect Spotify.", payload);
@@ -250,6 +261,32 @@ async function refresh() {
   }
 }
 
+async function bootstrapSync(force = false) {
+  setSyncStatus(force ? "Syncing with Spotify (manual refresh)..." : "Syncing with Spotify for first-time setup...");
+  const response = await fetch("/api/sync/bootstrap", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ force }),
+  });
+  const payload = await response.json();
+  setDebug(payload);
+
+  if (response.status === 429) {
+    setSyncStatus("Spotify rate limit reached. Please wait 30 seconds and click Sync again.");
+    return;
+  }
+  if (!response.ok) {
+    setSyncStatus(payload.error ?? "Sync failed.");
+    return;
+  }
+
+  if (payload.skipped) {
+    setSyncStatus("Spotify already synced. You're good to go.");
+  } else {
+    setSyncStatus(`Spotify sync complete. Taste vector updated (${payload.dims ?? 0} dims).`);
+  }
+}
+
 async function checkAuth() {
   try {
     const res = await fetch("/api/me");
@@ -260,12 +297,15 @@ async function checkAuth() {
       nowEl.innerHTML = `<p class="muted">Connect Spotify to get started.</p>`;
       recEl.innerHTML = `<p class="muted">Recommendations appear after connecting Spotify.</p>`;
       profileEl.innerHTML = `<p class="muted">No taste profile yet. Connect Spotify first.</p>`;
+      setSyncStatus("Not connected to Spotify.");
       return;
     }
 
+    await bootstrapSync(false);
     await refresh();
   } catch (error) {
     showFriendlyError("Could not check Spotify auth state.", String(error));
+    setSyncStatus("Could not verify Spotify connection.");
   }
 }
 
@@ -392,45 +432,14 @@ async function leaveRoom() {
 }
 
 loginBtn.addEventListener("click", () => {
+  setSyncStatus("Redirecting to Spotify authorization...");
   window.location.href = "/auth/spotify/login";
 });
 
-seedBtn.addEventListener("click", async () => {
-  const response = await fetch("/api/library/seed-famous", { method: "POST" });
-  const payload = await response.json();
-  setDebug(payload);
-  if (!response.ok) {
-    showFriendlyError(payload.error ?? "Could not seed library", payload);
-    return;
-  }
-  await refresh();
-});
-
-tasteBtn.addEventListener("click", async () => {
-  const response = await fetch("/api/profile/taste-refresh", { method: "POST" });
-  const payload = await response.json();
-  setDebug(payload);
-
-  if (response.status === 429) {
-    profileEl.innerHTML = `<p class="muted">Spotify rate limit hit. Please wait 30 seconds and try again.</p>`;
-    return;
-  }
-
-  if (!response.ok) {
-    profileEl.innerHTML = `<p class="muted">${payload.error ?? "Could not refresh taste profile."}</p>`;
-    return;
-  }
-
-  renderProfile({
-    hasTasteVector: payload.hasTasteVector,
-    dims: payload.dims,
-    updatedAt: payload.updatedAt,
-  });
-  await refresh();
-});
-
 refreshBtn.addEventListener("click", () => {
-  refresh().catch((error) => showFriendlyError("Refresh failed", String(error)));
+  bootstrapSync(true)
+    .then(() => refresh())
+    .catch((error) => showFriendlyError("Refresh failed", String(error)));
 });
 
 diversityInput.addEventListener("input", updateControlLabels);

@@ -90,6 +90,10 @@ const roomShareBodySchema = z.object({
   includeNowPlaying: z.boolean().optional(),
 });
 
+const bootstrapSyncBodySchema = z.object({
+  force: z.boolean().optional(),
+});
+
 function extractSessionId(req: express.Request): string | null {
   const sid = req.cookies.sid as string | undefined;
   return sid ?? null;
@@ -165,6 +169,11 @@ function explainSimilarity(target: number[], candidate: number[]): string[] {
 
 function cleanRoomName(raw: string): string {
   return raw.trim().replace(/\s+/g, "-").slice(0, 120);
+}
+
+function isSpotifyRateLimitError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("(429)");
 }
 
 function topTasteSignals(vector: number[]): string[] {
@@ -335,6 +344,13 @@ app.get("/api/spotify/now-playing", async (req, res) => {
     const vector = await cacheTrack(nowPlaying.trackId, session.tokens);
     return res.json({ ...nowPlaying, cachedVectorDims: vector.vector.length });
   } catch (error) {
+    if (isSpotifyRateLimitError(error)) {
+      return res.json({
+        isPlaying: false,
+        rateLimited: true,
+        warning: "Spotify now-playing is temporarily rate-limited. Try again shortly.",
+      });
+    }
     const message = error instanceof Error ? error.message : "Unknown error";
     return res.status(401).json({ error: message });
   }
@@ -418,6 +434,53 @@ app.get("/api/me", async (req, res) => {
     return res.json({ authenticated: true, ...profile });
   } catch {
     return res.json({ authenticated: false });
+  }
+});
+
+app.post("/api/sync/bootstrap", async (req, res) => {
+  try {
+    const session = await getActiveSession(req);
+    const body = bootstrapSyncBodySchema.safeParse(req.body);
+    const force = body.success ? body.data.force ?? false : false;
+
+    if (session.bootstrapCompletedAt && !force) {
+      return res.json({
+        skipped: true,
+        reason: "already_bootstrapped",
+        bootstrapCompletedAt: session.bootstrapCompletedAt,
+        hasTasteVector: Boolean(session.tasteVector),
+        dims: session.tasteVector?.length ?? 0,
+        updatedAt: session.tasteUpdatedAt,
+      });
+    }
+
+    const before = library.size;
+    for (const id of famousTrackSeeds) {
+      try {
+        await cacheTrack(id, session.tokens);
+      } catch {
+        // Ignore market-limited seed tracks.
+      }
+    }
+
+    const result = await refreshTasteProfile(session);
+    session.bootstrapCompletedAt = Date.now();
+    sessions.set(session.id, session);
+
+    return res.json({
+      skipped: false,
+      seeded: library.size - before,
+      sampled: result.sampled,
+      cached: result.cached,
+      hasTasteVector: Boolean(session.tasteVector),
+      dims: session.tasteVector?.length ?? 0,
+      updatedAt: session.tasteUpdatedAt,
+      bootstrapCompletedAt: session.bootstrapCompletedAt,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    const status = message.includes("429") ? 429 : 401;
+    return res.status(status).json({ error: message });
   }
 });
 
@@ -615,7 +678,28 @@ app.get("/api/recommendations/live", async (req, res) => {
     const diversity = clamp01(Number(req.query.diversity ?? 0.2));
     const tasteWeight = clamp01(Number(req.query.tasteWeight ?? 0.25));
     const session = await getActiveSession(req);
-    const nowPlaying = await fetchNowPlaying(session.tokens.accessToken);
+    let nowPlaying;
+    try {
+      nowPlaying = await fetchNowPlaying(session.tokens.accessToken);
+    } catch (error) {
+      if (isSpotifyRateLimitError(error)) {
+        return res.json({
+          nowPlaying: { isPlaying: false },
+          recommendations: [],
+          profile: {
+            hasTasteVector: Boolean(session.tasteVector),
+            updatedAt: session.tasteUpdatedAt,
+          },
+          controls: {
+            k: Math.max(1, k),
+            diversity,
+            tasteWeight,
+          },
+          warning: "Spotify now-playing is rate-limited right now. Your profile is still saved.",
+        });
+      }
+      throw error;
+    }
 
     if (!nowPlaying.trackId) {
       return res.json({ nowPlaying, recommendations: [] });
