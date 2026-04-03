@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { Redis } from "@upstash/redis";
 import {
   CompatibilitySummary,
   MutualRecommendation,
@@ -21,15 +22,40 @@ const roomStatePath = path.resolve(dataDir, "livekit-room-state.json");
 const rooms = new Map<string, RoomStateSnapshot>();
 let loaded = false;
 
+// Detect if running on Vercel with Upstash Redis available
+const useRedis = Boolean(process.env.UPSTASH_REDIS_REST_URL);
+let redis: Redis | null = null;
+
+if (useRedis) {
+  try {
+    redis = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL!,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+    });
+  } catch {
+    // Fallback to local fs if Redis fails
+  }
+}
+
 async function ensureLoaded(): Promise<void> {
   if (loaded) {
     return;
   }
   try {
-    const raw = await fs.readFile(roomStatePath, "utf8");
-    const parsed = JSON.parse(raw) as { rooms?: RoomStateSnapshot[] };
-    for (const room of parsed.rooms ?? []) {
-      rooms.set(room.roomName, room);
+    if (redis) {
+      const raw = await redis.get("livekit:room-state");
+      if (raw && typeof raw === "string") {
+        const parsed = JSON.parse(raw) as { rooms?: RoomStateSnapshot[] };
+        for (const room of parsed.rooms ?? []) {
+          rooms.set(room.roomName, room);
+        }
+      }
+    } else {
+      const raw = await fs.readFile(roomStatePath, "utf8");
+      const parsed = JSON.parse(raw) as { rooms?: RoomStateSnapshot[] };
+      for (const room of parsed.rooms ?? []) {
+        rooms.set(room.roomName, room);
+      }
     }
   } catch {
     // no-op
@@ -38,26 +64,37 @@ async function ensureLoaded(): Promise<void> {
 }
 
 async function persistRooms(): Promise<void> {
-  await fs.mkdir(dataDir, { recursive: true });
-  await fs.writeFile(
-    roomStatePath,
-    JSON.stringify({ updatedAt: new Date().toISOString(), rooms: [...rooms.values()] }, null, 2),
-    "utf8",
-  );
+  const payload = { updatedAt: new Date().toISOString(), rooms: [...rooms.values()] };
+  if (redis) {
+    await redis.set("livekit:room-state", JSON.stringify(payload));
+  } else {
+    await fs.mkdir(dataDir, { recursive: true });
+    await fs.writeFile(roomStatePath, JSON.stringify(payload, null, 2), "utf8");
+  }
 }
 
 async function appendEvent(event: RoomEvent): Promise<void> {
-  await fs.mkdir(dataDir, { recursive: true });
   let events: RoomEvent[] = [];
-  try {
-    const raw = await fs.readFile(roomEventsPath, "utf8");
-    const parsed = JSON.parse(raw) as { events?: RoomEvent[] };
-    events = parsed.events ?? [];
-  } catch {
-    events = [];
+  if (redis) {
+    const raw = await redis.get("livekit:events");
+    if (raw && typeof raw === "string") {
+      const parsed = JSON.parse(raw) as { events?: RoomEvent[] };
+      events = parsed.events ?? [];
+    }
+    events.push(event);
+    await redis.set("livekit:events", JSON.stringify({ events }));
+  } else {
+    try {
+      const raw = await fs.readFile(roomEventsPath, "utf8");
+      const parsed = JSON.parse(raw) as { events?: RoomEvent[] };
+      events = parsed.events ?? [];
+    } catch {
+      events = [];
+    }
+    events.push(event);
+    await fs.mkdir(dataDir, { recursive: true });
+    await fs.writeFile(roomEventsPath, JSON.stringify({ events }, null, 2), "utf8");
   }
-  events.push(event);
-  await fs.writeFile(roomEventsPath, JSON.stringify({ events }, null, 2), "utf8");
 }
 
 function ensureRoom(roomName: string): RoomStateSnapshot {

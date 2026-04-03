@@ -78,6 +78,52 @@ It performs:
 - Smoke check for `/health`
 - Smoke check that protected routes return `401` without auth
 
+## Deploy to Vercel (free tier)
+
+This app is fully compatible with Vercel using Upstash Redis for session + room persistence.
+
+### Prerequisites
+
+1. GitHub repo with this code pushed.
+2. Vercel account (free).
+3. Upstash Redis account (free tier).
+
+### Steps
+
+1. **Create Upstash Redis database:**
+   - Go to https://console.upstash.com
+   - Create a new Redis database (free tier is fine)
+   - Copy `REST API URL` and `REST API Token`
+
+2. **Deploy to Vercel:**
+   - Go to https://vercel.com/new
+   - Select your GitHub repo
+   - In **Environment Variables**, set:
+     - `SPOTIFY_CLIENT_ID` (from Spotify Dashboard)
+     - `SPOTIFY_CLIENT_SECRET` (from Spotify Dashboard)
+     - `SPOTIFY_REDIRECT_URI` = `https://YOUR-VERCEL-URL/auth/spotify/callback`
+     - `LIVEKIT_URL` (your LiveKit server URL, e.g., LiveKit Cloud wss://...)
+     - `LIVEKIT_API_KEY` (from LiveKit dashboard)
+     - `LIVEKIT_API_SECRET` (from LiveKit dashboard)
+     - `UPSTASH_REDIS_REST_URL` (from Upstash)
+     - `UPSTASH_REDIS_REST_TOKEN` (from Upstash)
+   - Click **Deploy**
+
+3. **Update Spotify app:**
+   - In Spotify Developer Dashboard, add the Vercel callback URL to your app's redirect URIs:
+     `https://YOUR-VERCEL-URL/auth/spotify/callback`
+
+4. **Test:**
+   - Open your Vercel URL
+   - Connect Spotify
+   - Create/join a room with a friend
+
+### Free tier limits
+
+- Vercel: up to 100 deployments/month, always-on serverless
+- Upstash Redis: 10K commands/day (sufficient for MVP testing)
+- LiveKit Cloud: free tier available for testing
+
 ## Solo flow (unchanged)
 
 1. Click **Connect Spotify**
