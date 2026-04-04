@@ -363,7 +363,7 @@
       }
       .account-grid {
         display: grid;
-        grid-template-columns: 1fr 1fr auto;
+        grid-template-columns: 1.2fr 1fr auto;
         gap: 8px;
         align-items: end;
       }
@@ -372,6 +372,27 @@
         box-sizing: border-box;
         padding: 10px;
         border: 2px solid #111111;
+      }
+      .account-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+      }
+      .account-actions button {
+        margin: 0;
+      }
+      .account-google-row {
+        margin-top: 10px;
+        border: 1px dashed #111111;
+        padding: 10px;
+        display: grid;
+        gap: 6px;
+        background: #fafafa;
+      }
+      .account-google-status {
+        font-size: 0.82rem;
       }
       .helper-note {
         border-left: 4px solid #444;
@@ -582,6 +603,31 @@
       </div>
 
       <div id="screen-home" class="screen active">
+        <section class="panel">
+          <h2>Log In or Register</h2>
+          <div class="account-grid">
+            <label>
+              Email
+              <input id="account-email" type="email" placeholder="you@example.com" />
+            </label>
+            <label>
+              Password
+              <input id="account-password" type="password" placeholder="at least 8 chars" />
+            </label>
+            <div class="account-actions">
+              <button id="account-register">Create</button>
+              <button id="account-login">Log In</button>
+              <button id="account-logout">Log Out</button>
+            </div>
+          </div>
+          <div class="account-google-row">
+            <strong>Or continue with Google</strong>
+            <div id="google-signin"></div>
+            <div id="google-signin-status" class="account-google-status muted">Loading Google sign-in...</div>
+          </div>
+          <div id="account-status" class="helper-note muted">Create a free account. We only use this for access and saved profile data.</div>
+        </section>
+
         <section id="account-gate" class="panel">
           <h2>Create Your Free Account</h2>
           <p class="muted">Build your personal Spotify taste map, keep it cached, and jump into shared rooms with friends. We only use your account for sign-in and product access. No spam, no marketing blasts.</p>
@@ -604,7 +650,7 @@
           </div>
         </section>
 
-        <div class="panel auth-banner">
+        <div class="panel auth-banner" data-requires-account="true">
           <div id="auth-status-content"><span class="muted">Checking Spotify connection...</span></div>
           <div class="sync-row">
             <div id="sync-status" class="sync-status">Waiting for Spotify sync...</div>
@@ -620,27 +666,6 @@
           </div>
           <div id="sync-log" class="sync-log muted">Sync log will appear here.</div>
         </div>
-
-        <section class="panel">
-          <h2>App Account</h2>
-          <div class="account-grid">
-            <label>
-              Email
-              <input id="account-email" type="email" placeholder="you@example.com" />
-            </label>
-            <label>
-              Password
-              <input id="account-password" type="password" placeholder="at least 8 chars" />
-            </label>
-            <div>
-              <button id="account-register">Create</button>
-              <button id="account-login">Log In</button>
-              <button id="account-logout">Log Out</button>
-              <div id="google-signin" style="margin-top:8px;"></div>
-            </div>
-          </div>
-          <div id="account-status" class="helper-note muted">Create a free account. We only use this for access and saved profile data.</div>
-        </section>
 
         <div class="panel" data-requires-account="true">
           <button id="login">Connect Spotify</button>

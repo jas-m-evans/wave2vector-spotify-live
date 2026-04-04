@@ -52,6 +52,7 @@ const accountLoginBtn = document.getElementById("account-login");
 const accountLogoutBtn = document.getElementById("account-logout");
 const accountStatusEl = document.getElementById("account-status");
 const googleSigninEl = document.getElementById("google-signin");
+const googleSigninStatusEl = document.getElementById("google-signin-status");
 const accountGateEl = document.getElementById("account-gate");
 const homeViewBtn = document.getElementById("view-home");
 const lobbyViewBtn = document.getElementById("view-lobby");
@@ -479,8 +480,14 @@ async function handleGoogleCredential(credential) {
     }
     renderAccountStatus({ authenticated: true, account: payload.account });
     setSyncStatus("Google sign-in complete. Connect Spotify once to build your profile cache.");
+    if (googleSigninStatusEl) {
+      googleSigninStatusEl.textContent = "Google sign-in complete.";
+    }
   } catch (error) {
     accountStatusEl.textContent = error instanceof Error ? error.message : String(error);
+    if (googleSigninStatusEl) {
+      googleSigninStatusEl.textContent = "Google sign-in failed. Try again or use email/password.";
+    }
   }
 }
 
@@ -488,7 +495,21 @@ async function initGoogleSignin() {
   try {
     const response = await fetch("/api/account/google-config");
     const payload = await response.json();
-    if (!payload.enabled || !payload.clientId || !window.google || !googleSigninEl) {
+    if (!googleSigninEl) {
+      return;
+    }
+
+    if (!payload.enabled || !payload.clientId) {
+      if (googleSigninStatusEl) {
+        googleSigninStatusEl.textContent = "Google sign-in is not configured on this environment yet.";
+      }
+      return;
+    }
+
+    if (!window.google) {
+      if (googleSigninStatusEl) {
+        googleSigninStatusEl.textContent = "Google script did not load. Refresh this page to retry.";
+      }
       return;
     }
 
@@ -502,8 +523,14 @@ async function initGoogleSignin() {
       text: "continue_with",
       shape: "rectangular",
     });
+    if (googleSigninStatusEl) {
+      googleSigninStatusEl.textContent = "Google sign-in is available.";
+    }
   } catch (error) {
     logEvent("account", "Google sign-in init failed", error);
+    if (googleSigninStatusEl) {
+      googleSigninStatusEl.textContent = "Google sign-in unavailable right now.";
+    }
   }
 }
 
