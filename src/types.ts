@@ -68,6 +68,14 @@ export type SpotifyProfile = {
   imageUrl?: string;
 };
 
+export type AppAccountPublic = {
+  id: string;
+  email: string;
+  createdAt: number;
+  updatedAt: number;
+  hasCachedProfile: boolean;
+};
+
 export type SharedTasteProfile = {
   roomName: string;
   participantName: string;

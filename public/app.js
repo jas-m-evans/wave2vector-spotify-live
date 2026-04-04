@@ -1,7 +1,6 @@
 import { Room, RoomEvent } from "https://esm.sh/livekit-client@2.15.3";
 
 const debugEl = document.getElementById("debug");
-const nowEl = document.getElementById("now-playing");
 const recEl = document.getElementById("recommendations");
 const profileEl = document.getElementById("profile");
 const diversityInput = document.getElementById("diversity");
@@ -27,8 +26,8 @@ const joinRoomBtn = document.getElementById("join-room");
 const leaveRoomBtn = document.getElementById("leave-room");
 const recomputeRoomBtn = document.getElementById("recompute-room");
 const copyRoomBtn = document.getElementById("copy-room");
-const copyRoomUrlBtn = document.getElementById("copy-room-url");
-const openRoomUrlBtn = document.getElementById("open-room-url");
+const shareRoomBtn = document.getElementById("share-room");
+const shareActionEl = document.getElementById("share-action");
 const roomShareUrlInput = document.getElementById("room-share-url");
 const publishRoomBtn = document.getElementById("publish-room");
 const refreshHistoryBtn = document.getElementById("refresh-history");
@@ -43,13 +42,19 @@ const horoscopeEl = document.getElementById("horoscope");
 const mutualRecEl = document.getElementById("mutual-recommendations");
 const nowCompareEl = document.getElementById("now-playing-compare");
 const authStatusEl = document.getElementById("auth-status-content");
+const accountEmailInput = document.getElementById("account-email");
+const accountPasswordInput = document.getElementById("account-password");
+const accountRegisterBtn = document.getElementById("account-register");
+const accountLoginBtn = document.getElementById("account-login");
+const accountLogoutBtn = document.getElementById("account-logout");
+const accountStatusEl = document.getElementById("account-status");
 const homeViewBtn = document.getElementById("view-home");
-const roomsViewBtn = document.getElementById("view-rooms");
+const lobbyViewBtn = document.getElementById("view-lobby");
+const roomViewBtn = document.getElementById("view-room");
 const homeScreenEl = document.getElementById("screen-home");
-const roomsScreenEl = document.getElementById("screen-rooms");
+const lobbyScreenEl = document.getElementById("screen-lobby");
+const roomScreenEl = document.getElementById("screen-room");
 
-let polling = false;
-let timer = null;
 let activeRoomName = "";
 let activeParticipantName = "";
 let spotifyDisplayName = "";
@@ -59,6 +64,7 @@ let roomPublished = false;
 let lastRoomParticipants = 0;
 let streamMode = "live";
 let roomHistory = [];
+let currentAccount = null;
 let localSharedState = {
   tasteProfile: null,
   nowPlayingState: null,
@@ -92,11 +98,15 @@ function logEvent(scope, message, details) {
 }
 
 function setActiveScreen(screen) {
-  const isHome = screen !== "rooms";
+  const isHome = screen === "home";
+  const isLobby = screen === "lobby";
+  const isRoom = screen === "room";
   homeScreenEl?.classList.toggle("active", isHome);
-  roomsScreenEl?.classList.toggle("active", !isHome);
+  lobbyScreenEl?.classList.toggle("active", isLobby);
+  roomScreenEl?.classList.toggle("active", isRoom);
   homeViewBtn?.classList.toggle("active", isHome);
-  roomsViewBtn?.classList.toggle("active", !isHome);
+  lobbyViewBtn?.classList.toggle("active", isLobby);
+  roomViewBtn?.classList.toggle("active", isRoom);
 }
 
 participantNameInput.value = localStorage.getItem("participantName") ?? "";
@@ -114,7 +124,7 @@ function setDebug(payload) {
 }
 
 function showFriendlyError(message, details) {
-  nowEl.innerHTML = `<p class="muted">${message}</p>`;
+  recEl.innerHTML = `<p class="muted">${message}</p>`;
   setDebug(details ?? message);
 }
 
@@ -389,7 +399,6 @@ function renderAuthStatus(profile) {
     authStatusEl.innerHTML = `
       <span class="muted">Not connected to Spotify.</span>
     `;
-    setRoomStepperState();
     return;
   }
 
@@ -411,26 +420,32 @@ function renderAuthStatus(profile) {
   if (!participantNameInput.value.trim() || participantNameInput.value.trim().toLowerCase() === "alex") {
     participantNameInput.value = spotifyDisplayName;
   }
-  setRoomStepperState();
 }
 
-function renderNowPlaying(now) {
-  if (!now || !now.trackId) {
-    nowEl.innerHTML = `<p class="muted">No active playback detected.</p>`;
+function renderAccountStatus(payload) {
+  if (!accountStatusEl) {
     return;
   }
+  if (!payload?.authenticated || !payload?.account) {
+    currentAccount = null;
+    accountStatusEl.textContent = "Not logged into app account yet.";
+    return;
+  }
+  currentAccount = payload.account;
+  const cached = payload.account.hasCachedProfile ? "cached profile ready" : "no cached profile yet";
+  accountStatusEl.textContent = `${payload.account.email} (${cached})`;
+}
 
-  const pct = now.durationMs ? ((now.progressMs ?? 0) / now.durationMs) * 100 : 0;
-  nowEl.innerHTML = `
-    <div class="track">
-      ${now.artworkUrl ? `<img src="${now.artworkUrl}" alt="art" />` : ""}
-      <div>
-        <strong>${now.name}</strong><br />
-        <span class="muted">${now.artist}</span><br />
-        <span class="muted">Progress: ${Math.round(pct)}%</span>
-      </div>
-    </div>
-  `;
+async function checkAccountAuth() {
+  try {
+    const response = await fetch("/api/account/me");
+    const payload = await response.json();
+    renderAccountStatus(payload);
+    return payload;
+  } catch (error) {
+    logEvent("account", "Could not fetch account status", error);
+    return { authenticated: false };
+  }
 }
 
 function renderRecommendations(items) {
@@ -642,7 +657,7 @@ function renderModelInsights(insights) {
     </div>
     <div class="insight-grid" style="margin-top:10px;">
       <div>
-        <h3 style="margin:0 0 8px 0;">Top Genres (free tier)</h3>
+        <h3 style="margin:0 0 8px 0;">Top Genres</h3>
         <div class="insight-chips">
           ${(insights.topGenres ?? [])
             .slice(0, 12)
@@ -651,7 +666,7 @@ function renderModelInsights(insights) {
         </div>
       </div>
       <div>
-        <h3 style="margin:0 0 8px 0;">Top Artists (free tier)</h3>
+        <h3 style="margin:0 0 8px 0;">Top Artists</h3>
         <div class="insight-chips">
           ${(insights.topArtists ?? [])
             .slice(0, 8)
@@ -786,7 +801,6 @@ async function refresh() {
     return;
   }
 
-  renderNowPlaying(payload.nowPlaying);
   renderRecommendations(payload.recommendations);
   renderProfile(payload.profile);
   renderModelInsights(payload.modelInsights);
@@ -920,18 +934,25 @@ async function bootstrapSync(force = false) {
 async function checkAuth() {
   try {
     logEvent("auth", "Checking auth state");
+    const accountPayload = await checkAccountAuth();
     const res = await fetch("/api/me");
     const profile = await res.json();
     logEvent("auth", `Auth response ${res.status}`, profile);
     renderAuthStatus(profile);
 
     if (!profile.authenticated) {
-      nowEl.innerHTML = `<p class="muted">Connect Spotify to get started.</p>`;
-      recEl.innerHTML = `<p class="muted">Recommendations appear after connecting Spotify.</p>`;
-      profileEl.innerHTML = `<p class="muted">Connect Spotify first, then we'll auto-sync your taste profile.</p>`;
-      setSyncStatus("Not connected to Spotify.");
+      recEl.innerHTML = `<p class="muted">Loading your saved profile recommendations...</p>`;
+      profileEl.innerHTML = `<p class="muted">Spotify disconnected. Using your cached account profile if available.</p>`;
+      setSyncStatus("Spotify not connected. Batch cache mode active when available.");
       setSyncProgress(0);
       appendSyncLog("Waiting for authentication.");
+      await refresh();
+      return;
+    }
+
+    if (accountPayload?.account?.hasCachedProfile) {
+      appendSyncLog("Using cached account profile. Skipping auto-bootstrap.");
+      await refresh();
       return;
     }
 
@@ -1146,6 +1167,7 @@ tasteWeightInput.addEventListener("input", updateControlLabels);
 joinRoomBtn.addEventListener("click", async () => {
   try {
     await joinRoom();
+    setActiveScreen("room");
   } catch (error) {
     logEvent("rooms", "Join room failed", error);
     setRoomStatus(error instanceof Error ? error.message : String(error));
@@ -1188,29 +1210,22 @@ copyRoomBtn?.addEventListener("click", async () => {
   }
 });
 
-copyRoomUrlBtn?.addEventListener("click", async () => {
+shareRoomBtn?.addEventListener("click", async () => {
   const roomName = (activeRoomName || roomNameInput.value.trim()).trim();
   if (!roomName) {
     setRoomStatus("Enter a room name first.");
     return;
   }
+  const action = shareActionEl?.value ?? "copy_link";
   const url = getShareRoomUrl(roomName);
-  try {
-    await navigator.clipboard.writeText(url);
-    setRoomStatus("Invite URL copied.", true);
-  } catch {
-    setRoomStatus("Could not copy invite URL.");
+  if (action === "copy_link") {
+    try {
+      await navigator.clipboard.writeText(url);
+      setRoomStatus("Share link copied.", true);
+    } catch {
+      setRoomStatus("Could not copy share link.");
+    }
   }
-});
-
-openRoomUrlBtn?.addEventListener("click", () => {
-  const roomName = (activeRoomName || roomNameInput.value.trim()).trim();
-  if (!roomName) {
-    setRoomStatus("Enter a room name first.");
-    return;
-  }
-  const url = getShareRoomUrl(roomName);
-  window.open(url, "_blank", "noopener,noreferrer");
 });
 
 publishRoomBtn?.addEventListener("click", async () => {
@@ -1233,7 +1248,6 @@ publishRoomBtn?.addEventListener("click", async () => {
     }
     roomPublished = Boolean(payload.published);
     setPublishButtonLabel();
-    setRoomStepperState();
     setRoomStatus(roomPublished ? `Room ${roomName} published.` : `Room ${roomName} hidden.`, true);
     await loadActiveRooms();
   } catch (error) {
@@ -1247,14 +1261,72 @@ refreshHistoryBtn?.addEventListener("click", () => {
   loadRoomHistory().catch((error) => setDebug(String(error)));
 });
 
-homeViewBtn?.addEventListener("click", () => {
-  setActiveScreen("home");
-  logEvent("ui", "Switched to Home Report screen");
+accountRegisterBtn?.addEventListener("click", async () => {
+  try {
+    const response = await fetch("/api/account/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: accountEmailInput?.value ?? "",
+        password: accountPasswordInput?.value ?? "",
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Could not create account");
+    }
+    renderAccountStatus({ authenticated: true, account: payload.account });
+    setSyncStatus("Account created. Connect Spotify once to build your cached profile.");
+  } catch (error) {
+    accountStatusEl.textContent = error instanceof Error ? error.message : String(error);
+  }
 });
 
-roomsViewBtn?.addEventListener("click", () => {
-  setActiveScreen("rooms");
-  logEvent("ui", "Switched to Rooms screen");
+accountLoginBtn?.addEventListener("click", async () => {
+  try {
+    const response = await fetch("/api/account/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: accountEmailInput?.value ?? "",
+        password: accountPasswordInput?.value ?? "",
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Could not login");
+    }
+    renderAccountStatus({ authenticated: true, account: payload.account });
+    await refresh();
+  } catch (error) {
+    accountStatusEl.textContent = error instanceof Error ? error.message : String(error);
+  }
+});
+
+accountLogoutBtn?.addEventListener("click", async () => {
+  await fetch("/api/account/logout", { method: "POST" });
+  await checkAccountAuth();
+  await refresh().catch((error) => setDebug(String(error)));
+});
+
+homeViewBtn?.addEventListener("click", () => {
+  setActiveScreen("home");
+  logEvent("ui", "Switched to Home screen");
+});
+
+lobbyViewBtn?.addEventListener("click", () => {
+  setActiveScreen("lobby");
+  logEvent("ui", "Switched to Lobby screen");
+});
+
+roomViewBtn?.addEventListener("click", () => {
+  if (!activeRoomName) {
+    setRoomStatus("Join a room from Lobby first.");
+    setActiveScreen("lobby");
+    return;
+  }
+  setActiveScreen("room");
+  logEvent("ui", "Switched to Room screen");
 });
 
 recEl.addEventListener("mouseover", (event) => {
@@ -1287,11 +1359,13 @@ checkAuth().catch((error) => {
   logEvent("init", "App init failed", error);
   showFriendlyError("Failed to initialize app", String(error));
 });
+checkAccountAuth().catch((error) => {
+  logEvent("init", "Account check failed", error);
+});
 
 refreshRoomPanels().catch((error) => setDebug(String(error)));
 updateControlLabels();
 setPublishButtonLabel();
-setRoomStepperState();
 setSyncPhaseState("auth");
 updateShareUrlInput(roomNameInput.value.trim());
 setActiveScreen("home");

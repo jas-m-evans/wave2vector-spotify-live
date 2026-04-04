@@ -37,6 +37,14 @@ type TrackPayload = {
   duration_ms?: number;
 };
 
+export type TrackMetadataHint = {
+  trackId: string;
+  name: string;
+  artist: string;
+  artworkUrl?: string;
+  previewUrl?: string;
+};
+
 export type SpotifyTopArtist = {
   id: string;
   name: string;
@@ -235,14 +243,29 @@ export async function fetchTopTrackIds(
   limit = 30,
   timeRange: "short_term" | "medium_term" | "long_term" = "medium_term",
 ): Promise<string[]> {
+  const tracks = await fetchTopTracks(accessToken, limit, timeRange);
+  return tracks.map((item) => item.trackId);
+}
+
+export async function fetchTopTracks(
+  accessToken: string,
+  limit = 30,
+  timeRange: "short_term" | "medium_term" | "long_term" = "medium_term",
+): Promise<TrackMetadataHint[]> {
   const response = await spotifyGet(`/me/top/tracks?time_range=${timeRange}&limit=${limit}`, accessToken);
   if (!response.ok) {
     throw new Error(`Top tracks request failed (${response.status}).`);
   }
-  const payload = (await response.json()) as { items?: Array<{ id?: string }> };
+  const payload = (await response.json()) as { items?: TrackPayload[] };
   return (payload.items ?? [])
-    .map((item) => item.id)
-    .filter((id): id is string => Boolean(id));
+    .filter((item): item is TrackPayload => Boolean(item.id && item.name))
+    .map((item) => ({
+      trackId: item.id,
+      name: item.name,
+      artist: item.artists.map((artist) => artist.name).join(", "),
+      artworkUrl: item.album?.images?.[0]?.url,
+      previewUrl: item.preview_url ?? undefined,
+    }));
 }
 
 export async function fetchTopArtists(
@@ -322,7 +345,7 @@ export async function fetchSpotifyProfile(accessToken: string): Promise<SpotifyP
 export async function fetchTrackVector(
   trackId: string,
   accessToken: string,
-  options?: { metadataOnly?: boolean },
+  options?: { metadataOnly?: boolean; fallbackMetadata?: TrackMetadataHint },
 ): Promise<TrackFeatureVector> {
   const trackRes = await spotifyGet(`/tracks/${trackId}`, accessToken);
   
@@ -353,8 +376,10 @@ export async function fetchTrackVector(
 
     return {
       trackId,
-      name: `Track ${trackId.slice(0, 8)}`,
-      artist: "Unknown",
+      name: options?.fallbackMetadata?.name ?? `Track ${trackId.slice(0, 8)}`,
+      artist: options?.fallbackMetadata?.artist ?? "Unknown",
+      artworkUrl: options?.fallbackMetadata?.artworkUrl,
+      previewUrl: options?.fallbackMetadata?.previewUrl,
       vector: minimalVector,
       source: "metadata-fallback",
     };

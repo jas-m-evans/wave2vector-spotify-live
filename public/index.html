@@ -336,8 +336,50 @@
       }
       .rec-layout {
         display: grid;
-        grid-template-columns: 1.1fr 0.9fr;
+        grid-template-columns: 0.85fr 1.15fr;
         gap: 10px;
+      }
+      .account-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr auto;
+        gap: 8px;
+        align-items: end;
+      }
+      .account-grid input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px;
+        border: 2px solid #111111;
+      }
+      .helper-note {
+        border-left: 4px solid #444;
+        background: #f7f7f7;
+        padding: 10px;
+        font-size: 0.84rem;
+      }
+      .tiny-icon-btn {
+        width: 44px;
+        height: 44px;
+        padding: 0;
+        display: inline-grid;
+        place-items: center;
+      }
+      .tiny-icon-btn svg {
+        width: 18px;
+        height: 18px;
+      }
+      .share-row {
+        margin-top: 10px;
+        display: grid;
+        grid-template-columns: 1fr 180px auto;
+        gap: 8px;
+      }
+      .share-row select,
+      .share-row input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px;
+        border: 2px solid #111111;
       }
       .projection-point {
         cursor: pointer;
@@ -436,6 +478,12 @@
         .room-url {
           grid-template-columns: 1fr;
         }
+        .account-grid {
+          grid-template-columns: 1fr;
+        }
+        .share-row {
+          grid-template-columns: 1fr;
+        }
         .insight-grid {
           grid-template-columns: 1fr;
         }
@@ -449,8 +497,9 @@
     <main>
       <h1>Wave2Vector Spotify Live</h1>
       <div class="top-nav">
-        <button id="view-home" class="active">Home Report</button>
-        <button id="view-rooms">Rooms</button>
+        <button id="view-home" class="active">Home</button>
+        <button id="view-lobby">Lobby</button>
+        <button id="view-room">Room</button>
       </div>
 
       <div id="screen-home" class="screen active">
@@ -471,9 +520,29 @@
           <div id="sync-log" class="sync-log muted">Sync log will appear here.</div>
         </div>
 
+        <section class="panel">
+          <h2>App Account</h2>
+          <div class="account-grid">
+            <label>
+              Email
+              <input id="account-email" type="email" placeholder="you@example.com" />
+            </label>
+            <label>
+              Password
+              <input id="account-password" type="password" placeholder="at least 8 chars" />
+            </label>
+            <div>
+              <button id="account-register">Create</button>
+              <button id="account-login">Log In</button>
+              <button id="account-logout">Log Out</button>
+            </div>
+          </div>
+          <div id="account-status" class="helper-note muted">Create or log in to save your Spotify profile cache.</div>
+        </section>
+
         <div class="panel">
           <button id="login">Connect Spotify</button>
-          <button id="refresh">Sync Report</button>
+          <button id="refresh">Sync</button>
           <div class="mode-switch">
             <button id="mode-live" class="active">Live Stream Mode</button>
             <button id="mode-batch">Batch Stream Mode</button>
@@ -504,63 +573,60 @@
           <div id="model-insights"><p class="muted">Insights appear after a successful sync.</p></div>
         </section>
 
-        <div class="row">
-          <section class="panel">
-            <h2>Now Playing</h2>
-            <div id="now-playing"></div>
-          </section>
-
-          <section class="panel">
-            <h2>Recommendations</h2>
-            <div class="rec-layout">
-              <div id="recommendations"></div>
-              <div id="recommendation-map"><p class="muted">Map appears after recommendations load.</p></div>
-            </div>
-          </section>
-        </div>
+        <section class="panel">
+          <h2>Recommendations</h2>
+          <div class="rec-layout">
+            <div id="recommendations"></div>
+            <div id="recommendation-map"><p class="muted">Map appears after recommendations load.</p></div>
+          </div>
+        </section>
       </div>
 
-      <div id="screen-rooms" class="screen">
+      <div id="screen-lobby" class="screen">
         <section class="panel">
-        <h2>LiveKit Room Mode</h2>
-        <p class="muted">Two users, one room, one shared compatibility readout.</p>
-        <div class="room-grid">
-          <label>
-            Room Name
-            <input id="room-name" placeholder="friday-vibes" />
-          </label>
-          <label>
-            Display Name
-            <input id="participant-name" placeholder="Alex" />
-          </label>
-          <div>
-            <button id="join-room">Create/Join Room</button>
-            <button id="leave-room">Leave Room</button>
-            <button id="copy-room">Copy Room Name</button>
-            <button id="publish-room">Publish Room</button>
+          <h2>Lobby</h2>
+          <p class="muted">Jam out with friends.</p>
+          <div class="helper-note">Browse rooms, publish yours, and join one room at a time.</div>
+          <div class="room-grid">
+            <label>
+              Room Name
+              <input id="room-name" placeholder="friday-vibes" />
+            </label>
+            <label>
+              Display Name
+              <input id="participant-name" placeholder="Alex" />
+            </label>
+            <div>
+              <button id="join-room">Join Room</button>
+              <button id="leave-room">Leave</button>
+              <button id="copy-room" class="tiny-icon-btn" title="Copy room name" aria-label="Copy room name">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11"></rect><rect x="4" y="4" width="11" height="11"></rect></svg>
+              </button>
+              <button id="publish-room">Publish</button>
+            </div>
           </div>
-        </div>
-        <div class="room-url">
-          <input id="room-share-url" readonly value="Join a room to generate a share URL" />
-          <button id="copy-room-url">Copy Invite URL</button>
-          <button id="open-room-url">Open URL</button>
-        </div>
-        <button id="recompute-room">Recompute Compatibility</button>
-        <div id="room-status" class="status-badge muted">Not connected to a room</div>
-        <div id="room-help" class="room-help muted">Create/join a room, then share the same room name with one other person. Compatibility and mutual picks appear when both users are connected and have synced taste profiles.</div>
-        <div id="room-stepper" class="stepper">
-          <div id="step-connect" class="step"><span class="dot"></span><span>Step 1: Connect Spotify</span></div>
-          <div id="step-join" class="step"><span class="dot"></span><span>Step 2: Join a room</span></div>
-          <div id="step-invite" class="step"><span class="dot"></span><span>Step 3: Invite a friend (same room name)</span></div>
-          <div id="step-wait" class="step"><span class="dot"></span><span>Step 4: Wait for second user</span></div>
-          <div id="step-compute" class="step"><span class="dot"></span><span>Step 5: Recompute compatibility</span></div>
-        </div>
-        <div id="active-rooms" class="active-rooms muted">No published rooms yet.</div>
-        <div>
-          <button id="refresh-history">Refresh Space History</button>
-          <div id="room-history" class="history-list muted">Space history appears after a room has had at least one live session.</div>
-        </div>
-        <div id="participant-list" style="margin-top:10px;"></div>
+          <div class="share-row">
+            <input id="room-share-url" readonly value="Join a room to generate a share URL" />
+            <select id="share-action">
+              <option value="copy_link">Share Link</option>
+            </select>
+            <button id="share-room">Share</button>
+          </div>
+          <div id="room-status" class="status-badge muted">Not connected to a room</div>
+          <div id="room-help" class="helper-note muted">Once connected, open the Room screen for compatibility and shared recommendations.</div>
+          <div id="active-rooms" class="active-rooms muted">No published rooms yet.</div>
+          <div>
+            <button id="refresh-history">Refresh Space History</button>
+            <div id="room-history" class="history-list muted">Space history appears after a room has had at least one live session.</div>
+          </div>
+        </section>
+      </div>
+
+      <div id="screen-room" class="screen">
+        <section class="panel">
+          <h2>Room</h2>
+          <button id="recompute-room">Recompute Compatibility</button>
+          <div id="participant-list" style="margin-top:10px;"></div>
         </section>
 
         <section class="panel">

@@ -5,6 +5,13 @@ import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
+import {
+  createAccount,
+  getAccountById,
+  getCachedSessionLike,
+  loginAccount,
+  saveSessionCacheToAccount,
+} from "./accountStore.js";
 import { computeCompatibility } from "./compatibility.js";
 import {
   endLiveStream,
@@ -31,17 +38,18 @@ import {
   createStateToken,
   exchangeCodeForToken,
   fetchTopArtists,
+  fetchTopTracks,
   fetchRecentlyPlayedTrackIds,
   fetchSavedTrackIds,
   fetchSpotifyProfile,
-  fetchTopTrackIds,
   fetchNowPlaying,
+  TrackMetadataHint,
   fetchTrackVector,
   refreshToken,
   spotifyLoginUrl,
 } from "./spotify.js";
 import { loadLibraryFromDisk, persistLibraryToDisk } from "./store.js";
-import { SessionRecord, SpotifyTokens, TrackFeatureVector } from "./types.js";
+import { AppAccountPublic, SessionRecord, SpotifyTokens, TrackFeatureVector } from "./types.js";
 
 dotenv.config();
 
@@ -132,9 +140,43 @@ const bootstrapSyncBodySchema = z.object({
   force: z.boolean().optional(),
 });
 
+const appAccountAuthSchema = z.object({
+  email: z.string().trim().email(),
+  password: z.string().min(8).max(128),
+});
+
 function extractSessionId(req: express.Request): string | null {
   const sid = req.cookies.sid as string | undefined;
   return sid ?? null;
+}
+
+function extractAccountId(req: express.Request): string | null {
+  const aid = req.cookies.aid as string | undefined;
+  return aid ?? null;
+}
+
+function toAccountPublic(account: {
+  id: string;
+  email: string;
+  createdAt: number;
+  updatedAt: number;
+  cache?: unknown;
+}): AppAccountPublic {
+  return {
+    id: account.id,
+    email: account.email,
+    createdAt: account.createdAt,
+    updatedAt: account.updatedAt,
+    hasCachedProfile: Boolean(account.cache),
+  };
+}
+
+async function getActiveAccount(req: express.Request) {
+  const aid = extractAccountId(req);
+  if (!aid) {
+    return null;
+  }
+  return getAccountById(aid);
 }
 
 async function getActiveSession(req: express.Request): Promise<SessionRecord> {
@@ -160,7 +202,7 @@ async function getActiveSession(req: express.Request): Promise<SessionRecord> {
 async function cacheTrack(
   trackId: string,
   tokens: SpotifyTokens,
-  options?: { metadataOnly?: boolean },
+  options?: { metadataOnly?: boolean; fallbackMetadata?: TrackMetadataHint },
 ): Promise<TrackFeatureVector> {
   const cached = library.get(trackId);
   if (cached) {
@@ -466,6 +508,7 @@ async function refreshTasteProfileBatch(
   // eslint-disable-next-line no-console
   console.log(`[sync] batch refresh start sid=${session.id} sampleLimit=${batchTrackSampleLimit}`);
   const mergedTopIds: string[] = [];
+  const metadataHints = new Map<string, TrackMetadataHint>();
   const seen = new Set<string>();
   const sourceCounts: Record<string, number> = {
     short_term: 0,
@@ -483,8 +526,12 @@ async function refreshTasteProfileBatch(
 
   for (const window of windows) {
     try {
-      const ids = await fetchTopTrackIds(session.tokens.accessToken, 20, window);
+      const tracks = await fetchTopTracks(session.tokens.accessToken, 20, window);
+      const ids = tracks.map((item) => item.trackId);
       sourceCounts[window] = ids.length;
+      for (const item of tracks) {
+        metadataHints.set(item.trackId, item);
+      }
       for (const id of ids) {
         if (!seen.has(id)) {
           seen.add(id);
@@ -569,7 +616,10 @@ async function refreshTasteProfileBatch(
   for (const trackId of topIds) {
     try {
       await sleep(260);
-      const vector = await cacheTrack(trackId, session.tokens, { metadataOnly: true });
+      const vector = await cacheTrack(trackId, session.tokens, {
+        metadataOnly: true,
+        fallbackMetadata: metadataHints.get(trackId),
+      });
       vectors.push(vector.vector);
       if (vector.source === "metadata-fallback") {
         metadataFallbackCount += 1;
@@ -712,6 +762,51 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true, librarySize: library.size, sessions: sessions.size });
 });
 
+app.post("/api/account/register", async (req, res) => {
+  try {
+    const body = appAccountAuthSchema.parse(req.body ?? {});
+    const account = await createAccount(body.email, body.password);
+    res.cookie("aid", account.id, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: cookieSecure,
+    });
+    return res.json({ account: toAccountPublic(account) });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(400).json({ error: message });
+  }
+});
+
+app.post("/api/account/login", async (req, res) => {
+  try {
+    const body = appAccountAuthSchema.parse(req.body ?? {});
+    const account = await loginAccount(body.email, body.password);
+    res.cookie("aid", account.id, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: cookieSecure,
+    });
+    return res.json({ account: toAccountPublic(account) });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(401).json({ error: message });
+  }
+});
+
+app.post("/api/account/logout", (_req, res) => {
+  res.clearCookie("aid");
+  return res.json({ ok: true });
+});
+
+app.get("/api/account/me", async (req, res) => {
+  const account = await getActiveAccount(req);
+  if (!account) {
+    return res.json({ authenticated: false });
+  }
+  return res.json({ authenticated: true, account: toAccountPublic(account) });
+});
+
 app.get("/auth/spotify/login", (req, res) => {
   const sid = extractSessionId(req) ?? createSessionId();
   const state = createStateToken();
@@ -743,6 +838,11 @@ app.get("/auth/spotify/callback", async (req, res) => {
 
     const tokens = await exchangeCodeForToken(code);
     sessions.set(sid, { id: sid, tokens });
+    const aid = extractAccountId(req);
+    if (aid) {
+      const profile = await fetchSpotifyProfile(tokens.accessToken).catch(() => undefined);
+      await saveSessionCacheToAccount(aid, { id: sid, tokens }, profile);
+    }
 
     return res.redirect("/");
   } catch (error) {
@@ -820,6 +920,10 @@ app.post("/api/profile/taste-refresh", async (req, res) => {
     const session = await getActiveSession(req);
     session.streamModePreference = "batch";
     const result = await refreshTasteProfileBatch(session);
+    const account = await getActiveAccount(req);
+    if (account) {
+      await saveSessionCacheToAccount(account.id, session);
+    }
     return res.json({
       ...result,
       streamMode: "batch",
@@ -842,9 +946,17 @@ app.get("/api/profile", async (req, res) => {
       dims: session.tasteVector?.length ?? 0,
       updatedAt: session.tasteUpdatedAt,
     });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return res.status(401).json({ error: message });
+  } catch {
+    const account = await getActiveAccount(req);
+    if (account) {
+      const cached = await getCachedSessionLike(account.id);
+      return res.json({
+        hasTasteVector: Boolean(cached?.tasteVector?.length),
+        dims: cached?.tasteVector?.length ?? 0,
+        updatedAt: cached?.tasteUpdatedAt,
+      });
+    }
+    return res.status(401).json({ error: "Not authenticated." });
   }
 });
 
@@ -897,6 +1009,11 @@ app.post("/api/sync/bootstrap", async (req, res) => {
     });
     session.bootstrapCompletedAt = Date.now();
     sessions.set(session.id, session);
+    const account = await getActiveAccount(req);
+    if (account) {
+      const spotifyProfile = await fetchSpotifyProfile(session.tokens.accessToken).catch(() => undefined);
+      await saveSessionCacheToAccount(account.id, session, spotifyProfile);
+    }
     setSyncProgress(session.id, "complete", 100, "Sync complete.");
 
     return res.json({
@@ -1208,25 +1325,40 @@ app.get("/api/recommendations/live", async (req, res) => {
     const k = Number(req.query.k ?? 5);
     const diversity = clamp01(Number(req.query.diversity ?? 0.2));
     const tasteWeight = clamp01(Number(req.query.tasteWeight ?? 0.25));
-    const session = await getActiveSession(req);
+    const account = await getActiveAccount(req);
+    let session: SessionRecord | null = null;
+    try {
+      session = await getActiveSession(req);
+    } catch {
+      session = null;
+    }
+
+    const cachedSession = !session && account ? await getCachedSessionLike(account.id) : null;
+    const sessionLike = (session ?? cachedSession ?? null) as (SessionRecord | null);
+    if (!sessionLike) {
+      return res.status(401).json({ error: "Not authenticated. Log in and connect Spotify." });
+    }
+
     const queryMode = recommendationModeSchema.safeParse(req.query.mode);
     const streamMode = queryMode.success
       ? queryMode.data
-      : (session.streamModePreference ?? "live");
+      : (sessionLike.streamModePreference ?? "batch");
 
     if (streamMode === "batch") {
-      session.streamModePreference = "batch";
-      const tasteOnly = buildTasteOnlyRecommendations(session, Math.max(1, k));
+      if (session) {
+        session.streamModePreference = "batch";
+      }
+      const tasteOnly = buildTasteOnlyRecommendations(sessionLike, Math.max(1, k));
       return res.json({
         streamMode: "batch",
         nowPlaying: { isPlaying: false },
         recommendations: tasteOnly?.recommendations ?? [],
         profile: {
-          hasTasteVector: Boolean(session.tasteVector),
-          dims: session.tasteVector?.length ?? 0,
-          updatedAt: session.tasteUpdatedAt,
+          hasTasteVector: Boolean(sessionLike.tasteVector),
+          dims: sessionLike.tasteVector?.length ?? 0,
+          updatedAt: sessionLike.tasteUpdatedAt,
         },
-        modelInsights: buildModelInsights(session),
+        modelInsights: buildModelInsights(sessionLike),
         horoscope: tasteOnly?.horoscope,
         controls: {
           k: Math.max(1, k),
@@ -1238,6 +1370,10 @@ app.get("/api/recommendations/live", async (req, res) => {
           ? "Batch stream mode: showing recommendations from your persisted taste profile."
           : "Batch stream mode is ready, but your taste profile is still empty. Sync with Spotify.",
       });
+    }
+
+    if (!session) {
+      return res.status(401).json({ error: "Live mode requires an active Spotify connection." });
     }
 
     session.streamModePreference = "live";
