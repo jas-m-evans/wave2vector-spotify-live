@@ -4,7 +4,6 @@ const debugEl = document.getElementById("debug");
 const nowEl = document.getElementById("now-playing");
 const recEl = document.getElementById("recommendations");
 const profileEl = document.getElementById("profile");
-const pollBtn = document.getElementById("poll");
 const diversityInput = document.getElementById("diversity");
 const tasteWeightInput = document.getElementById("taste-weight");
 const kInput = document.getElementById("k");
@@ -18,6 +17,7 @@ const syncStatusEl = document.getElementById("sync-status");
 const syncPercentEl = document.getElementById("sync-percent");
 const syncMeterFillEl = document.getElementById("sync-meter-fill");
 const syncLogEl = document.getElementById("sync-log");
+const syncPhasesEl = document.getElementById("sync-phases");
 const modelInsightsEl = document.getElementById("model-insights");
 const recommendationMapEl = document.getElementById("recommendation-map");
 
@@ -43,6 +43,10 @@ const horoscopeEl = document.getElementById("horoscope");
 const mutualRecEl = document.getElementById("mutual-recommendations");
 const nowCompareEl = document.getElementById("now-playing-compare");
 const authStatusEl = document.getElementById("auth-status-content");
+const homeViewBtn = document.getElementById("view-home");
+const roomsViewBtn = document.getElementById("view-rooms");
+const homeScreenEl = document.getElementById("screen-home");
+const roomsScreenEl = document.getElementById("screen-rooms");
 
 let polling = false;
 let timer = null;
@@ -75,6 +79,25 @@ const featureLabels = [
   "time_signature",
   "duration",
 ];
+const syncPhaseOrder = ["auth", "pull_ids", "vectorize", "aggregate", "complete"];
+
+function logEvent(scope, message, details) {
+  const timestamp = new Date().toISOString();
+  const line = `[${timestamp}] [${scope}] ${message}`;
+  if (details !== undefined) {
+    console.log(line, details);
+  } else {
+    console.log(line);
+  }
+}
+
+function setActiveScreen(screen) {
+  const isHome = screen !== "rooms";
+  homeScreenEl?.classList.toggle("active", isHome);
+  roomsScreenEl?.classList.toggle("active", !isHome);
+  homeViewBtn?.classList.toggle("active", isHome);
+  roomsViewBtn?.classList.toggle("active", !isHome);
+}
 
 participantNameInput.value = localStorage.getItem("participantName") ?? "";
 roomNameInput.value = localStorage.getItem("roomName") ?? "";
@@ -86,6 +109,7 @@ if (roomParam) {
 updateShareUrlInput(roomNameInput.value.trim());
 
 function setDebug(payload) {
+  logEvent("debug", "setDebug called", payload);
   debugEl.textContent = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
 }
 
@@ -126,6 +150,32 @@ function resetSyncLog() {
   if (syncLogEl) {
     syncLogEl.textContent = "";
   }
+}
+
+function setSyncPhaseState(currentPhase) {
+  if (!syncPhasesEl) {
+    return;
+  }
+  const currentIdx = syncPhaseOrder.indexOf(currentPhase);
+  syncPhasesEl.querySelectorAll(".phase-pill").forEach((pill) => {
+    const phase = pill.getAttribute("data-phase");
+    const idx = syncPhaseOrder.indexOf(phase);
+    pill.classList.remove("active", "done");
+    if (idx >= 0 && currentIdx >= 0 && idx < currentIdx) {
+      pill.classList.add("done");
+    }
+    if (phase === currentPhase) {
+      pill.classList.add("active");
+    }
+  });
+}
+
+async function fetchSyncProgress() {
+  const response = await fetch("/api/sync/progress");
+  if (!response.ok) {
+    throw new Error(`Sync progress request failed (${response.status})`);
+  }
+  return response.json();
 }
 
 function updateControlLabels() {
@@ -316,8 +366,10 @@ function renderActiveRooms(rooms) {
 
 async function loadActiveRooms() {
   try {
+    logEvent("rooms", "Loading active rooms");
     const response = await fetch("/api/rooms/active?limit=10");
     const payload = await response.json();
+    logEvent("rooms", `Active rooms response ${response.status}`, payload);
     if (!response.ok) {
       return;
     }
@@ -704,6 +756,7 @@ function renderMutualRecommendations(items) {
 }
 
 async function refresh() {
+  logEvent("refresh", "Starting recommendation refresh", { streamMode });
   const params = new URLSearchParams({
     k: String(Math.max(1, Number(kInput.value || 5))),
     diversity: String(Number(diversityInput.value || 0.2)),
@@ -713,6 +766,7 @@ async function refresh() {
 
   const response = await fetch(`/api/recommendations/live?${params.toString()}`);
   const payload = await response.json();
+  logEvent("refresh", `Recommendations response ${response.status}`, payload);
   setDebug(payload);
 
   if (payload.warning) {
@@ -747,38 +801,85 @@ async function refresh() {
     kInput.value = String(payload.controls.k);
     updateControlLabels();
   }
+  logEvent("refresh", "Recommendation refresh complete");
 }
 
 async function bootstrapSync(force = false) {
+  logEvent("sync", "Bootstrap sync requested", { force });
   resetSyncLog();
   setSyncProgress(0);
+  setSyncPhaseState("auth");
   appendSyncLog(`Bootstrap start (force=${force ? "true" : "false"}).`);
   setSyncStatus(force ? "Syncing with Spotify (manual refresh)..." : "Syncing with Spotify for first-time setup...");
 
   let progress = 8;
   setSyncProgress(progress);
-  const timer = setInterval(() => {
-    progress = Math.min(88, progress + 6);
-    setSyncProgress(progress);
-  }, 350);
+  const progressTimer = setInterval(async () => {
+    try {
+      const live = await fetchSyncProgress();
+      if (typeof live.percent === "number") {
+        progress = live.percent;
+        setSyncProgress(progress);
+      }
+      if (typeof live.phase === "string") {
+        setSyncPhaseState(live.phase);
+      }
+      if (live.message) {
+        setSyncStatus(live.message);
+      }
+      if (typeof live.processed === "number" && typeof live.total === "number") {
+        appendSyncLog(`Phase ${live.phase}: ${live.processed}/${live.total}`);
+      }
+      logEvent("sync", "Polled sync progress", live);
+    } catch (error) {
+      logEvent("sync", "Progress poll error", error);
+    }
+  }, 900);
+  const heartbeatTimer = setInterval(() => {
+    appendSyncLog(`Sync still running at ${progress}%... waiting for Spotify + retries to complete.`);
+    logEvent("sync", "Heartbeat", { progress, force });
+  }, 3000);
 
-  const response = await fetch("/api/sync/bootstrap", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ force }),
-  });
-  const payload = await response.json();
-  clearInterval(timer);
+  let response;
+  let payload;
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 180000);
+    response = await fetch("/api/sync/bootstrap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    payload = await response.json();
+    logEvent("sync", `Bootstrap response ${response.status}`, payload);
+  } catch (error) {
+    clearInterval(progressTimer);
+    clearInterval(heartbeatTimer);
+    setSyncStatus("Sync timed out or failed. Check console logs for full details.");
+    appendSyncLog(`Sync request failed: ${error instanceof Error ? error.message : String(error)}`);
+    logEvent("sync", "Bootstrap failed", error);
+    setSyncProgress(0);
+    throw error;
+  }
+
+  clearInterval(progressTimer);
+  clearInterval(heartbeatTimer);
   setSyncProgress(100);
+  setSyncPhaseState("complete");
   setDebug(payload);
   appendSyncLog(`HTTP ${response.status}`);
 
   if (response.status === 429) {
+    setSyncPhaseState("complete");
     setSyncStatus("Spotify rate limit reached. Please wait 30 seconds and click Sync again.");
     appendSyncLog("Rate-limited by Spotify (429). No profile update applied.");
+    logEvent("sync", "Rate limited", payload);
     return payload;
   }
   if (!response.ok) {
+    setSyncPhaseState("auth");
     setSyncStatus(payload.error ?? "Sync failed.");
     appendSyncLog(`Sync failed: ${payload.error ?? "unknown error"}`);
     return payload;
@@ -803,6 +904,12 @@ async function bootstrapSync(force = false) {
   } else {
     setSyncStatus(`Spotify sync complete. Taste vector updated (${payload.dims ?? 0} dims).`);
   }
+  logEvent("sync", "Bootstrap sync complete", {
+    dims: payload.dims,
+    sampled: payload.sampled,
+    cached: payload.cached,
+    failures: payload.vectorFailureCount,
+  });
 
   renderModelInsights(payload.modelInsights);
   renderProjectionMap(payload.projectionMap ?? null);
@@ -812,8 +919,10 @@ async function bootstrapSync(force = false) {
 
 async function checkAuth() {
   try {
+    logEvent("auth", "Checking auth state");
     const res = await fetch("/api/me");
     const profile = await res.json();
+    logEvent("auth", `Auth response ${res.status}`, profile);
     renderAuthStatus(profile);
 
     if (!profile.authenticated) {
@@ -833,12 +942,14 @@ async function checkAuth() {
     }
     await refresh();
   } catch (error) {
+    logEvent("auth", "Auth check failed", error);
     showFriendlyError("Could not check Spotify auth state.", String(error));
     setSyncStatus("Could not verify Spotify connection.");
   }
 }
 
 async function refreshRoomPanels() {
+  logEvent("rooms", "Refreshing room panels", { activeRoomName });
   await loadActiveRooms();
 
   if (!activeRoomName) {
@@ -858,6 +969,11 @@ async function refreshRoomPanels() {
   const roomPayload = await roomRes.json();
   const compatibilityPayload = await compatibilityRes.json();
   const mutualPayload = await mutualRes.json();
+  logEvent("rooms", "Room panel payloads", {
+    roomStatus: roomRes.status,
+    compatibilityStatus: compatibilityRes.status,
+    mutualStatus: mutualRes.status,
+  });
 
   renderParticipants(roomPayload.room);
   renderCompatibility(compatibilityPayload);
@@ -878,6 +994,7 @@ async function shareLocalStateViaBackend() {
     return;
   }
 
+  logEvent("rooms", "Sharing local state", { activeRoomName, activeParticipantName });
   const response = await fetch(`/api/rooms/${encodeURIComponent(activeRoomName)}/share-state`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -885,6 +1002,7 @@ async function shareLocalStateViaBackend() {
   });
 
   const payload = await response.json();
+  logEvent("rooms", `Share state response ${response.status}`, payload);
   if (!response.ok) {
     throw new Error(payload.error ?? "Failed to share room state");
   }
@@ -920,12 +1038,14 @@ async function joinRoom() {
   localStorage.setItem("participantName", participantName);
   updateShareUrlInput(roomName);
 
+  logEvent("rooms", "Join room requested", { roomName, participantName });
   const tokenRes = await fetch("/api/livekit/token", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ roomName, participantName }),
   });
   const tokenPayload = await tokenRes.json();
+  logEvent("rooms", `LiveKit token response ${tokenRes.status}`, tokenPayload);
 
   if (!tokenRes.ok) {
     throw new Error(tokenPayload.error ?? "Failed to get LiveKit token");
@@ -953,6 +1073,7 @@ async function joinRoom() {
 
   await shareLocalStateViaBackend();
   await refreshRoomPanels();
+  logEvent("rooms", "Join room complete", { activeRoomName, activeParticipantName });
 }
 
 async function leaveRoom() {
@@ -966,6 +1087,7 @@ async function leaveRoom() {
     livekitRoom = null;
   }
 
+  logEvent("rooms", "Leave room requested", { activeRoomName });
   await fetch(`/api/rooms/${encodeURIComponent(roomName)}/leave`, { method: "POST" });
 
   activeRoomName = "";
@@ -978,27 +1100,32 @@ async function leaveRoom() {
   setRoomStatus("Not connected to a room", false);
   setRoomStepperState();
   await refreshRoomPanels();
+  logEvent("rooms", "Leave room complete", { roomName });
 }
 
 loginBtn.addEventListener("click", () => {
+  logEvent("auth", "Redirecting to Spotify OAuth");
   setSyncStatus("Redirecting to Spotify authorization...");
   appendSyncLog("Redirecting to Spotify OAuth.");
   window.location.href = "/auth/spotify/login";
 });
 
 refreshBtn.addEventListener("click", () => {
+  logEvent("sync", "Manual sync requested");
   bootstrapSync(true)
     .then(() => refresh())
     .catch((error) => showFriendlyError("Refresh failed", String(error)));
 });
 
 modeLiveBtn?.addEventListener("click", () => {
+  logEvent("ui", "Switching stream mode", { mode: "live" });
   setStreamMode("live");
   localStorage.setItem("streamMode", "live");
   refresh().catch((error) => setDebug(String(error)));
 });
 
 modeBatchBtn?.addEventListener("click", () => {
+  logEvent("ui", "Switching stream mode", { mode: "batch" });
   setStreamMode("batch");
   localStorage.setItem("streamMode", "batch");
   refresh().catch((error) => setDebug(String(error)));
@@ -1020,6 +1147,7 @@ joinRoomBtn.addEventListener("click", async () => {
   try {
     await joinRoom();
   } catch (error) {
+    logEvent("rooms", "Join room failed", error);
     setRoomStatus(error instanceof Error ? error.message : String(error));
     setDebug(String(error));
   }
@@ -1029,6 +1157,7 @@ leaveRoomBtn.addEventListener("click", async () => {
   try {
     await leaveRoom();
   } catch (error) {
+    logEvent("rooms", "Leave room failed", error);
     setRoomStatus(error instanceof Error ? error.message : String(error));
     setDebug(String(error));
   }
@@ -1036,9 +1165,11 @@ leaveRoomBtn.addEventListener("click", async () => {
 
 recomputeRoomBtn.addEventListener("click", async () => {
   try {
+    logEvent("rooms", "Manual recompute requested");
     await shareLocalStateViaBackend();
     await refreshRoomPanels();
   } catch (error) {
+    logEvent("rooms", "Manual recompute failed", error);
     setDebug(String(error));
   }
 });
@@ -1089,6 +1220,7 @@ publishRoomBtn?.addEventListener("click", async () => {
     return;
   }
   try {
+    logEvent("rooms", "Toggle publish requested", { roomName, next: !roomPublished });
     const next = !roomPublished;
     const response = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/publish`, {
       method: "POST",
@@ -1105,31 +1237,24 @@ publishRoomBtn?.addEventListener("click", async () => {
     setRoomStatus(roomPublished ? `Room ${roomName} published.` : `Room ${roomName} hidden.`, true);
     await loadActiveRooms();
   } catch (error) {
+    logEvent("rooms", "Toggle publish failed", error);
     setRoomStatus(error instanceof Error ? error.message : String(error));
   }
 });
 
 refreshHistoryBtn?.addEventListener("click", () => {
+  logEvent("rooms", "Manual history refresh requested");
   loadRoomHistory().catch((error) => setDebug(String(error)));
 });
 
-pollBtn.addEventListener("click", async () => {
-  polling = !polling;
-  pollBtn.textContent = polling ? "Stop live polling" : "Start live polling";
+homeViewBtn?.addEventListener("click", () => {
+  setActiveScreen("home");
+  logEvent("ui", "Switched to Home Report screen");
+});
 
-  if (polling) {
-    await refresh();
-    timer = setInterval(async () => {
-      await refresh();
-      if (activeRoomName) {
-        await shareLocalStateViaBackend();
-        await refreshRoomPanels();
-      }
-    }, 4000);
-  } else if (timer) {
-    clearInterval(timer);
-    timer = null;
-  }
+roomsViewBtn?.addEventListener("click", () => {
+  setActiveScreen("rooms");
+  logEvent("ui", "Switched to Rooms screen");
 });
 
 recEl.addEventListener("mouseover", (event) => {
@@ -1159,6 +1284,7 @@ recEl.addEventListener("mouseout", (event) => {
 });
 
 checkAuth().catch((error) => {
+  logEvent("init", "App init failed", error);
   showFriendlyError("Failed to initialize app", String(error));
 });
 
@@ -1166,7 +1292,9 @@ refreshRoomPanels().catch((error) => setDebug(String(error)));
 updateControlLabels();
 setPublishButtonLabel();
 setRoomStepperState();
+setSyncPhaseState("auth");
 updateShareUrlInput(roomNameInput.value.trim());
+setActiveScreen("home");
 loadActiveRooms().catch(() => {
   // Active room directory is optional.
 });

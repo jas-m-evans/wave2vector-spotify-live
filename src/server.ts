@@ -57,6 +57,16 @@ app.use(express.json());
 const stateToSession = new Map<string, string>();
 const sessions = new Map<string, SessionRecord>();
 const library = await loadLibraryFromDisk();
+type SyncPhase = "idle" | "auth" | "pull_ids" | "vectorize" | "aggregate" | "complete" | "error";
+type SyncProgressState = {
+  phase: SyncPhase;
+  percent: number;
+  message: string;
+  processed?: number;
+  total?: number;
+  updatedAt: number;
+};
+const syncProgressBySession = new Map<string, SyncProgressState>();
 
 const famousTrackSeeds = [
   "4uLU6hMCjMI75M1A2tKUQC",
@@ -90,6 +100,7 @@ const artistWindowWeights: Record<"short_term" | "medium_term" | "long_term", nu
   medium_term: 1,
   long_term: 0.8,
 };
+const batchTrackSampleLimit = Math.max(8, Math.min(40, Number(process.env.BATCH_TRACK_SAMPLE_LIMIT ?? 24)));
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -146,12 +157,16 @@ async function getActiveSession(req: express.Request): Promise<SessionRecord> {
   return session;
 }
 
-async function cacheTrack(trackId: string, tokens: SpotifyTokens): Promise<TrackFeatureVector> {
+async function cacheTrack(
+  trackId: string,
+  tokens: SpotifyTokens,
+  options?: { metadataOnly?: boolean },
+): Promise<TrackFeatureVector> {
   const cached = library.get(trackId);
   if (cached) {
     return cached;
   }
-  const track = await fetchTrackVector(trackId, tokens.accessToken);
+  const track = await fetchTrackVector(trackId, tokens.accessToken, options);
   library.set(trackId, track);
   try {
     await persistLibraryToDisk(library);
@@ -204,6 +219,23 @@ function cleanRoomName(raw: string): string {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function setSyncProgress(
+  sessionId: string,
+  phase: SyncPhase,
+  percent: number,
+  message: string,
+  details?: { processed?: number; total?: number },
+): void {
+  syncProgressBySession.set(sessionId, {
+    phase,
+    percent: Math.max(0, Math.min(100, Math.round(percent))),
+    message,
+    processed: details?.processed,
+    total: details?.total,
+    updatedAt: Date.now(),
+  });
 }
 
 function isSpotifyRateLimitError(error: unknown): boolean {
@@ -417,7 +449,10 @@ function averageVectors(vectors: number[][]): number[] | undefined {
   return sum.map((value) => value / vectors.length);
 }
 
-async function refreshTasteProfileBatch(session: SessionRecord): Promise<{
+async function refreshTasteProfileBatch(
+  session: SessionRecord,
+  reportProgress?: (state: { phase: SyncPhase; percent: number; message: string; processed?: number; total?: number }) => void,
+): Promise<{
   sampled: number;
   cached: number;
   sourceCounts: Record<string, number>;
@@ -427,6 +462,9 @@ async function refreshTasteProfileBatch(session: SessionRecord): Promise<{
   vectorFailureCount: number;
   vectorFailureSamples: string[];
 }> {
+  reportProgress?.({ phase: "pull_ids", percent: 18, message: "Pulling top tracks and artists" });
+  // eslint-disable-next-line no-console
+  console.log(`[sync] batch refresh start sid=${session.id} sampleLimit=${batchTrackSampleLimit}`);
   const mergedTopIds: string[] = [];
   const seen = new Set<string>();
   const sourceCounts: Record<string, number> = {
@@ -515,7 +553,14 @@ async function refreshTasteProfileBatch(session: SessionRecord): Promise<{
     }
   }
 
-  const topIds = mergedTopIds.slice(0, 40);
+  const topIds = mergedTopIds.slice(0, batchTrackSampleLimit);
+  reportProgress?.({
+    phase: "vectorize",
+    percent: 32,
+    message: `Vectorizing ${topIds.length} tracks`,
+    processed: 0,
+    total: topIds.length,
+  });
   const vectors: number[][] = [];
   let metadataFallbackCount = 0;
   let vectorFailureCount = 0;
@@ -524,7 +569,7 @@ async function refreshTasteProfileBatch(session: SessionRecord): Promise<{
   for (const trackId of topIds) {
     try {
       await sleep(260);
-      const vector = await cacheTrack(trackId, session.tokens);
+      const vector = await cacheTrack(trackId, session.tokens, { metadataOnly: true });
       vectors.push(vector.vector);
       if (vector.source === "metadata-fallback") {
         metadataFallbackCount += 1;
@@ -536,7 +581,25 @@ async function refreshTasteProfileBatch(session: SessionRecord): Promise<{
       }
       // Skip unavailable tracks in local market.
     }
+    if ((vectors.length + vectorFailureCount) % 5 === 0 || (vectors.length + vectorFailureCount) === topIds.length) {
+      const processed = vectors.length + vectorFailureCount;
+      const ratio = topIds.length ? processed / topIds.length : 1;
+      const percent = 32 + Math.round(ratio * 53);
+      reportProgress?.({
+        phase: "vectorize",
+        percent,
+        message: `Vectorized ${processed}/${topIds.length}`,
+        processed,
+        total: topIds.length,
+      });
+      // eslint-disable-next-line no-console
+      console.log(
+        `[sync] batch progress sid=${session.id} processed=${vectors.length + vectorFailureCount}/${topIds.length} cached=${vectors.length} failed=${vectorFailureCount}`,
+      );
+    }
   }
+
+  reportProgress?.({ phase: "aggregate", percent: 90, message: "Aggregating taste profile" });
 
   const centroid = averageVectors(vectors);
   const libraryFallback = !centroid && library.size
@@ -573,6 +636,10 @@ async function refreshTasteProfileBatch(session: SessionRecord): Promise<{
     updatedAt: session.tasteUpdatedAt,
   };
   sessions.set(session.id, session);
+  // eslint-disable-next-line no-console
+  console.log(
+    `[sync] batch refresh complete sid=${session.id} dims=${session.tasteVector?.length ?? 0} cached=${vectors.length} failed=${vectorFailureCount} fallback=${fallbackUsed}`,
+  );
 
   return {
     sampled: topIds.length,
@@ -794,10 +861,12 @@ app.get("/api/me", async (req, res) => {
 app.post("/api/sync/bootstrap", async (req, res) => {
   try {
     const session = await getActiveSession(req);
+    setSyncProgress(session.id, "auth", 8, "Authenticated. Starting sync.");
     const body = bootstrapSyncBodySchema.safeParse(req.body);
     const force = body.success ? body.data.force ?? false : false;
 
     if (session.bootstrapCompletedAt && session.tasteVector?.length && !force) {
+      setSyncProgress(session.id, "complete", 100, "Already synced. Using cached profile.");
       return res.json({
         skipped: true,
         reason: "already_bootstrapped",
@@ -817,11 +886,18 @@ app.post("/api/sync/bootstrap", async (req, res) => {
         // Ignore market-limited seed tracks.
       }
     }
+    setSyncProgress(session.id, "pull_ids", 20, "Seeded baseline tracks. Pulling Spotify IDs.");
 
     session.streamModePreference = "batch";
-    const result = await refreshTasteProfileBatch(session);
+    const result = await refreshTasteProfileBatch(session, (state) => {
+      setSyncProgress(session.id, state.phase, state.percent, state.message, {
+        processed: state.processed,
+        total: state.total,
+      });
+    });
     session.bootstrapCompletedAt = Date.now();
     sessions.set(session.id, session);
+    setSyncProgress(session.id, "complete", 100, "Sync complete.");
 
     return res.json({
       skipped: false,
@@ -843,8 +919,30 @@ app.post("/api/sync/bootstrap", async (req, res) => {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
+    try {
+      const session = await getActiveSession(req);
+      setSyncProgress(session.id, "error", 0, message);
+    } catch {
+      // Session may be unavailable on auth failures.
+    }
     const status = message.includes("429") ? 429 : 401;
     return res.status(status).json({ error: message });
+  }
+});
+
+app.get("/api/sync/progress", async (req, res) => {
+  try {
+    const session = await getActiveSession(req);
+    const progress = syncProgressBySession.get(session.id) ?? {
+      phase: "idle",
+      percent: 0,
+      message: "No sync in progress.",
+      updatedAt: Date.now(),
+    };
+    return res.json(progress);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(401).json({ error: message });
   }
 });
 

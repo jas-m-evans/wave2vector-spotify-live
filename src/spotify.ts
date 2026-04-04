@@ -319,7 +319,11 @@ export async function fetchSpotifyProfile(accessToken: string): Promise<SpotifyP
   };
 }
 
-export async function fetchTrackVector(trackId: string, accessToken: string): Promise<TrackFeatureVector> {
+export async function fetchTrackVector(
+  trackId: string,
+  accessToken: string,
+  options?: { metadataOnly?: boolean },
+): Promise<TrackFeatureVector> {
   const trackRes = await spotifyGet(`/tracks/${trackId}`, accessToken);
   
   // If track fetch fails, create minimal fallback from just the track ID
@@ -357,6 +361,48 @@ export async function fetchTrackVector(trackId: string, accessToken: string): Pr
   }
 
   const track = (await trackRes.json()) as TrackPayload;
+  if (options?.metadataOnly) {
+    const popularity = Math.max(0, Math.min(100, track.popularity ?? 50)) / 100;
+    const durationNorm = Math.max(0, Math.min(1, (track.duration_ms ?? 210000) / 600000));
+    const explicit = track.explicit ? 1 : 0;
+    const year = Number((track.album?.release_date ?? "2000").slice(0, 4));
+    const releaseRecency = Number.isFinite(year)
+      ? Math.max(0, Math.min(1, (year - 1960) / (new Date().getFullYear() - 1960)))
+      : 0.5;
+    const seed = track.id
+      .split("")
+      .reduce((sum, ch, idx) => (sum + ch.charCodeAt(0) * (idx + 7)) % 10007, 0);
+    const seedA = ((seed % 997) + 1) / 998;
+    const seedB = (((seed * 7) % 991) + 1) / 992;
+    const seedC = (((seed * 17) % 983) + 1) / 984;
+
+    const metadataVector = [
+      0.1 + popularity * 0.8,
+      0.12 + popularity * 0.76,
+      seedA,
+      0.15 + (0.6 * popularity + 0.25 * seedB),
+      explicit ? 0.18 : 0.86,
+      explicit ? 0.62 + seedC * 0.22 : 0.14 + seedB * 0.22,
+      Math.max(0.05, 1 - popularity * 0.72),
+      Math.max(0.02, (1 - popularity) * 0.8 + seedA * 0.15),
+      0.12 + seedC * 0.78,
+      0.18 + releaseRecency * 0.72,
+      Math.max(0.05, Math.min(0.98, durationNorm * 0.65 + seedB * 0.25)),
+      3 / 7 + (seedA - 0.5) * 0.08,
+      Math.max(0.05, Math.min(0.98, durationNorm)),
+    ];
+
+    return {
+      trackId: track.id,
+      name: track.name,
+      artist: track.artists.map((a) => a.name).join(", "),
+      artworkUrl: track.album?.images?.[0]?.url,
+      previewUrl: track.preview_url ?? undefined,
+      vector: metadataVector,
+      source: "metadata-fallback",
+    };
+  }
+
   const featuresRes = await spotifyGet(`/audio-features/${trackId}`, accessToken);
 
   if (featuresRes.ok) {

@@ -55,6 +55,21 @@
         background: #111111;
         color: #ffffff;
       }
+      .top-nav {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .top-nav button.active {
+        background: #111111;
+        color: #ffffff;
+      }
+      .screen {
+        display: none;
+      }
+      .screen.active {
+        display: block;
+      }
       pre {
         background: #ffffff;
         border: 2px solid #111111;
@@ -229,6 +244,26 @@
         overflow: auto;
         background: #f8f8f8;
         white-space: pre-wrap;
+      }
+      .phase-row {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(90px, 1fr));
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .phase-pill {
+        border: 1px solid #111111;
+        padding: 4px 6px;
+        font-size: 0.74rem;
+        text-align: center;
+        background: #ffffff;
+      }
+      .phase-pill.active {
+        background: #111111;
+        color: #ffffff;
+      }
+      .phase-pill.done {
+        background: #dff5e4;
       }
       .insight-grid {
         display: grid;
@@ -413,52 +448,80 @@
   <body>
     <main>
       <h1>Wave2Vector Spotify Live</h1>
-
-      <div class="panel auth-banner">
-        <div id="auth-status-content"><span class="muted">Checking Spotify connection...</span></div>
-        <div class="sync-row">
-          <div id="sync-status" class="sync-status">Waiting for Spotify sync...</div>
-          <strong id="sync-percent">0%</strong>
-        </div>
-        <div class="sync-meter"><div id="sync-meter-fill" class="sync-meter-fill"></div></div>
-        <div id="sync-log" class="sync-log muted">Sync log will appear here.</div>
+      <div class="top-nav">
+        <button id="view-home" class="active">Home Report</button>
+        <button id="view-rooms">Rooms</button>
       </div>
 
-      <div class="panel">
-        <button id="login">Connect Spotify</button>
-        <button id="refresh">Sync With Spotify</button>
-        <button id="poll">Start live polling</button>
-        <div class="mode-switch">
-          <button id="mode-live" class="active">Live Stream Mode</button>
-          <button id="mode-batch">Batch Stream Mode</button>
+      <div id="screen-home" class="screen active">
+        <div class="panel auth-banner">
+          <div id="auth-status-content"><span class="muted">Checking Spotify connection...</span></div>
+          <div class="sync-row">
+            <div id="sync-status" class="sync-status">Waiting for Spotify sync...</div>
+            <strong id="sync-percent">0%</strong>
+          </div>
+          <div class="sync-meter"><div id="sync-meter-fill" class="sync-meter-fill"></div></div>
+          <div id="sync-phases" class="phase-row">
+            <div class="phase-pill" data-phase="auth">Auth</div>
+            <div class="phase-pill" data-phase="pull_ids">Pull IDs</div>
+            <div class="phase-pill" data-phase="vectorize">Vectorize</div>
+            <div class="phase-pill" data-phase="aggregate">Aggregate</div>
+            <div class="phase-pill" data-phase="complete">Complete</div>
+          </div>
+          <div id="sync-log" class="sync-log muted">Sync log will appear here.</div>
         </div>
-        <div class="control-grid">
-          <label>
-            Diversity <span id="diversity-value">0.20</span>
-            <input id="diversity" type="range" min="0" max="1" step="0.05" value="0.2" />
-          </label>
-          <label>
-            Taste weight <span id="taste-weight-value">0.25</span>
-            <input id="taste-weight" type="range" min="0" max="1" step="0.05" value="0.25" />
-          </label>
-          <label>
-            Recommendation count
-            <input id="k" type="number" min="1" max="20" value="5" />
-          </label>
+
+        <div class="panel">
+          <button id="login">Connect Spotify</button>
+          <button id="refresh">Sync Report</button>
+          <div class="mode-switch">
+            <button id="mode-live" class="active">Live Stream Mode</button>
+            <button id="mode-batch">Batch Stream Mode</button>
+          </div>
+          <div class="control-grid">
+            <label>
+              Diversity <span id="diversity-value">0.20</span>
+              <input id="diversity" type="range" min="0" max="1" step="0.05" value="0.2" />
+            </label>
+            <label>
+              Taste weight <span id="taste-weight-value">0.25</span>
+              <input id="taste-weight" type="range" min="0" max="1" step="0.05" value="0.25" />
+            </label>
+            <label>
+              Recommendation count
+              <input id="k" type="number" min="1" max="20" value="5" />
+            </label>
+          </div>
+        </div>
+
+        <section class="panel">
+          <h2>Taste Profile</h2>
+          <div id="profile"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Model Insights</h2>
+          <div id="model-insights"><p class="muted">Insights appear after a successful sync.</p></div>
+        </section>
+
+        <div class="row">
+          <section class="panel">
+            <h2>Now Playing</h2>
+            <div id="now-playing"></div>
+          </section>
+
+          <section class="panel">
+            <h2>Recommendations</h2>
+            <div class="rec-layout">
+              <div id="recommendations"></div>
+              <div id="recommendation-map"><p class="muted">Map appears after recommendations load.</p></div>
+            </div>
+          </section>
         </div>
       </div>
 
-      <section class="panel">
-        <h2>Taste Profile</h2>
-        <div id="profile"></div>
-      </section>
-
-      <section class="panel">
-        <h2>Model Insights</h2>
-        <div id="model-insights"><p class="muted">Insights appear after a successful sync.</p></div>
-      </section>
-
-      <section class="panel">
+      <div id="screen-rooms" class="screen">
+        <section class="panel">
         <h2>LiveKit Room Mode</h2>
         <p class="muted">Two users, one room, one shared compatibility readout.</p>
         <div class="room-grid">
@@ -498,24 +561,8 @@
           <div id="room-history" class="history-list muted">Space history appears after a room has had at least one live session.</div>
         </div>
         <div id="participant-list" style="margin-top:10px;"></div>
-      </section>
-
-      <div class="row">
-        <section class="panel">
-          <h2>Now Playing</h2>
-          <div id="now-playing"></div>
         </section>
 
-        <section class="panel">
-          <h2>Recommendations</h2>
-          <div class="rec-layout">
-            <div id="recommendations"></div>
-            <div id="recommendation-map"><p class="muted">Map appears after recommendations load.</p></div>
-          </div>
-        </section>
-      </div>
-
-      <div class="row">
         <section class="panel">
           <h2>Compatibility</h2>
           <div id="compatibility"></div>
@@ -525,17 +572,17 @@
           <h2>Taste Horoscope</h2>
           <div id="horoscope"></div>
         </section>
+
+        <section class="panel">
+          <h2>Both Of You Might Like</h2>
+          <div id="mutual-recommendations"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Now Playing Comparison</h2>
+          <div id="now-playing-compare"></div>
+        </section>
       </div>
-
-      <section class="panel">
-        <h2>Both Of You Might Like</h2>
-        <div id="mutual-recommendations"></div>
-      </section>
-
-      <section class="panel">
-        <h2>Now Playing Comparison</h2>
-        <div id="now-playing-compare"></div>
-      </section>
 
       <section class="panel">
         <h2>Debug</h2>
