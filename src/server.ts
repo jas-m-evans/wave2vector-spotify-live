@@ -158,6 +158,29 @@ function extractAccountId(req: express.Request): string | null {
   return aid ?? null;
 }
 
+function getConfiguredRedirectHost(): string | null {
+  const redirectUri = process.env.SPOTIFY_REDIRECT_URI;
+  if (!redirectUri) {
+    return null;
+  }
+  try {
+    return new URL(redirectUri).host;
+  } catch {
+    return null;
+  }
+}
+
+function getRequestHost(req: express.Request): string | null {
+  const forwardedHost = req.get("x-forwarded-host");
+  const host = forwardedHost ?? req.get("host");
+  return host ? host.split(",")[0].trim() : null;
+}
+
+function getRequestProto(req: express.Request): string {
+  const forwardedProto = req.get("x-forwarded-proto");
+  return forwardedProto ? forwardedProto.split(",")[0].trim() : req.protocol;
+}
+
 function toAccountPublic(account: {
   id: string;
   email: string;
@@ -880,9 +903,20 @@ app.get("/auth/spotify/login", (req, res) => {
   const sid = extractSessionId(req) ?? createSessionId();
   const state = createStateToken();
   const aid = extractAccountId(req);
+  const requestHost = getRequestHost(req);
+  const requestProto = getRequestProto(req);
+  const redirectHost = getConfiguredRedirectHost();
 
   // eslint-disable-next-line no-console
-  console.log(`[oauth] /auth/spotify/login: sid=${sid}, aid=${aid ?? "none"}, state=${state}`);
+  console.log(
+    `[oauth] /auth/spotify/login: sid=${sid}, aid=${aid ?? "none"}, state=${state}, request=${requestProto}://${requestHost ?? "unknown"}, redirectHost=${redirectHost ?? "missing"}`,
+  );
+  if (requestHost && redirectHost && requestHost !== redirectHost) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[oauth] Host mismatch detected. App request host is ${requestHost}, but SPOTIFY_REDIRECT_URI points to ${redirectHost}. This will break host-scoped cookies and look like a logout after Spotify redirect.`,
+    );
+  }
 
   stateToSession.set(state, sid);
   res.cookie("sid", sid, {
@@ -901,8 +935,19 @@ app.get("/auth/spotify/callback", async (req, res) => {
   try {
     const code = req.query.code as string | undefined;
     const state = req.query.state as string | undefined;
+    const requestHost = getRequestHost(req);
+    const requestProto = getRequestProto(req);
+    const redirectHost = getConfiguredRedirectHost();
     // eslint-disable-next-line no-console
-    console.log(`[oauth] Callback received: state=${state}, code=${code ? "yes" : "no"}`);
+    console.log(
+      `[oauth] Callback received: state=${state}, code=${code ? "yes" : "no"}, request=${requestProto}://${requestHost ?? "unknown"}, redirectHost=${redirectHost ?? "missing"}`,
+    );
+    if (requestHost && redirectHost && requestHost !== redirectHost) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[oauth] Callback host mismatch detected. Callback arrived on ${requestHost}, but configured redirect host is ${redirectHost}.`,
+      );
+    }
 
     if (!code || !state) {
       return res.status(400).send("Missing Spotify callback code or state.");
