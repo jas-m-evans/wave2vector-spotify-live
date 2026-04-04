@@ -63,6 +63,16 @@ const scopes = [
 const accountsBase = "https://accounts.spotify.com";
 const apiBase = "https://api.spotify.com/v1";
 
+const requiredSpotifyEnvKeys = [
+  "SPOTIFY_CLIENT_ID",
+  "SPOTIFY_CLIENT_SECRET",
+  "SPOTIFY_REDIRECT_URI",
+] as const;
+
+export function getMissingSpotifyEnv(): string[] {
+  return requiredSpotifyEnvKeys.filter((key) => !process.env[key]);
+}
+
 function envOrThrow(key: string): string {
   const value = process.env[key];
   if (!value) {

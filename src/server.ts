@@ -46,6 +46,7 @@ import {
   fetchNowPlaying,
   TrackMetadataHint,
   fetchTrackVector,
+  getMissingSpotifyEnv,
   refreshToken,
   spotifyLoginUrl,
 } from "./spotify.js";
@@ -116,6 +117,12 @@ const __dirname = path.dirname(__filename);
 const publicDir = path.resolve(__dirname, "../public");
 app.use(express.static(publicDir));
 
+const missingSpotifyEnv = getMissingSpotifyEnv();
+if (missingSpotifyEnv.length) {
+  // eslint-disable-next-line no-console
+  console.warn(`[config] Missing Spotify env vars: ${missingSpotifyEnv.join(", ")}`);
+}
+
 const liveKitTokenBodySchema = z.object({
   roomName: z.string().trim().min(1).max(120),
   participantName: z.string().trim().min(1).max(60),
@@ -179,6 +186,11 @@ function getRequestHost(req: express.Request): string | null {
 function getRequestProto(req: express.Request): string {
   const forwardedProto = req.get("x-forwarded-proto");
   return forwardedProto ? forwardedProto.split(",")[0].trim() : req.protocol;
+}
+
+function buildClientErrorRedirect(message: string): string {
+  const params = new URLSearchParams({ spotify_error: message });
+  return `/?${params.toString()}`;
 }
 
 function toAccountPublic(account: {
@@ -872,6 +884,16 @@ app.get("/api/account/me", async (req, res) => {
   return res.json({ authenticated: true, account: toAccountPublic(account) });
 });
 
+app.get("/api/config/status", (_req, res) => {
+  const missing = getMissingSpotifyEnv();
+  return res.json({
+    spotify: {
+      configured: missing.length === 0,
+      missing,
+    },
+  });
+});
+
 app.post("/api/debug/logs", (req, res) => {
   try {
     const body = req.body as unknown;
@@ -900,6 +922,13 @@ app.post("/api/debug/logs", (req, res) => {
 });
 
 app.get("/auth/spotify/login", (req, res) => {
+  const missing = getMissingSpotifyEnv();
+  if (missing.length) {
+    // eslint-disable-next-line no-console
+    console.warn(`[oauth] Spotify login blocked; missing env vars: ${missing.join(", ")}`);
+    return res.redirect(buildClientErrorRedirect(`Spotify is not configured locally. Missing: ${missing.join(", ")}`));
+  }
+
   const sid = extractSessionId(req) ?? createSessionId();
   const state = createStateToken();
   const aid = extractAccountId(req);
@@ -928,7 +957,7 @@ app.get("/auth/spotify/login", (req, res) => {
   });
   // eslint-disable-next-line no-console
   console.log(`[oauth] Redirecting to Spotify with state=${state}`);
-  res.redirect(spotifyLoginUrl(state));
+  return res.redirect(spotifyLoginUrl(state));
 });
 
 app.get("/auth/spotify/callback", async (req, res) => {
@@ -1014,7 +1043,7 @@ app.get("/auth/spotify/callback", async (req, res) => {
     const message = error instanceof Error ? error.message : "Unknown error";
     // eslint-disable-next-line no-console
     console.error(`[oauth] Callback error: ${message}`);
-    return res.status(500).send(`Spotify auth failed: ${message}`);
+    return res.redirect(buildClientErrorRedirect(`Spotify auth failed: ${message}`));
   }
 });
 

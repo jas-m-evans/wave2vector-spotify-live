@@ -225,9 +225,20 @@ function showToast(message) {
 participantNameInput.value = localStorage.getItem("participantName") ?? "";
 roomNameInput.value = localStorage.getItem("roomName") ?? "";
 setStreamMode(localStorage.getItem("streamMode") ?? "live");
-const roomParam = new URLSearchParams(window.location.search).get("room");
+const pageParams = new URLSearchParams(window.location.search);
+const roomParam = pageParams.get("room");
+const spotifyErrorParam = pageParams.get("spotify_error");
 if (roomParam) {
   roomNameInput.value = roomParam.trim();
+}
+if (spotifyErrorParam) {
+  setSyncStatus(spotifyErrorParam);
+  appendSyncLog(spotifyErrorParam);
+  showFriendlyError(spotifyErrorParam, spotifyErrorParam);
+  pageParams.delete("spotify_error");
+  const nextQuery = pageParams.toString();
+  const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}${window.location.hash}`;
+  window.history.replaceState({}, "", nextUrl);
 }
 updateShareUrlInput(roomNameInput.value.trim());
 
@@ -1582,6 +1593,9 @@ try {
 checkAuth().catch((error) => {
   logEvent("init", "App init failed", error);
   showFriendlyError("Failed to initialize app", String(error));
+});
+loadConfigStatus().catch((error) => {
+  logEvent("config", "Config status load failed", error);
 });
 
 refreshRoomPanels().catch((error) => setDebug(String(error)));
