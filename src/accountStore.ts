@@ -130,8 +130,12 @@ async function persist(): Promise<void> {
 export async function createAccount(email: string, password: string, username?: string): Promise<AppAccount> {
   await ensureLoaded();
   const normalized = normalizeEmail(email);
-  if (accountIdByEmail.has(normalized)) {
-    throw new Error("Account already exists for this email.");
+  const existingId = accountIdByEmail.get(normalized);
+  if (existingId) {
+    const existing = accounts.get(existingId);
+    if (existing) {
+      throw new Error(`Account already exists with email ${email}. Try logging in instead, or use a different email.`);
+    }
   }
 
   const salt = crypto.randomBytes(16).toString("hex");

@@ -11,6 +11,7 @@ import {
   getCachedSessionLike,
   loginAccount,
   saveSessionCacheToAccount,
+  type AppAccount,
 } from "./accountStore.js";
 import { computeCompatibility } from "./compatibility.js";
 import {
@@ -778,7 +779,13 @@ app.post("/api/account/register", async (req, res) => {
       return res.status(409).json({ error: "You are already logged in. Log out before creating another account." });
     }
     const body = appAccountRegisterSchema.parse(req.body ?? {});
-    const account = await createAccount(body.email, body.password, body.username);
+    let account: AppAccount | null = null;
+    try {
+      account = await createAccount(body.email, body.password, body.username);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Account creation failed";
+      return res.status(409).json({ error: message });
+    }
     res.cookie("aid", account.id, {
       httpOnly: true,
       sameSite: "lax",
@@ -796,7 +803,13 @@ app.post("/api/account/register", async (req, res) => {
 app.post("/api/account/login", async (req, res) => {
   try {
     const body = appAccountAuthSchema.parse(req.body ?? {});
-    const account = await loginAccount(body.email, body.password);
+    let account: AppAccount | null = null;
+    try {
+      account = await loginAccount(body.email, body.password);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Login failed";
+      return res.status(401).json({ error: message });
+    }
     res.cookie("aid", account.id, {
       httpOnly: true,
       sameSite: "lax",
@@ -806,7 +819,7 @@ app.post("/api/account/login", async (req, res) => {
     });
     return res.json({ account: toAccountPublic(account) });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = error instanceof Error ? error.message : "Login failed";
     return res.status(401).json({ error: message });
   }
 });
@@ -861,11 +874,19 @@ app.get("/auth/spotify/callback", async (req, res) => {
     }
 
     const tokens = await exchangeCodeForToken(code);
-    sessions.set(sid, { id: sid, tokens });
+    const session: SessionRecord = { id: sid, tokens };
+    sessions.set(sid, session);
     const aid = extractAccountId(req);
     if (aid) {
       const profile = await fetchSpotifyProfile(tokens.accessToken).catch(() => undefined);
-      await saveSessionCacheToAccount(aid, { id: sid, tokens }, profile);
+      await saveSessionCacheToAccount(aid, session, profile);
+      res.cookie("aid", aid, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: cookieSecure,
+        path: "/",
+        maxAge: 1000 * 60 * 60 * 24 * 30,
+      });
     }
 
     return res.redirect("/");
