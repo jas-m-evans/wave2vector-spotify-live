@@ -31,10 +31,17 @@ type TrackPayload = {
   name: string;
   popularity?: number;
   explicit?: boolean;
-  artists: Array<{ name: string }>;
+  artists: Array<{ id?: string; name: string }>;
   album?: { images?: Array<{ url: string }>; release_date?: string };
   preview_url?: string | null;
   duration_ms?: number;
+};
+
+export type SpotifyTopArtist = {
+  id: string;
+  name: string;
+  popularity: number;
+  genres: string[];
 };
 
 const scopes = [
@@ -210,6 +217,31 @@ export async function fetchTopTrackIds(
     .filter((id): id is string => Boolean(id));
 }
 
+export async function fetchTopArtists(
+  accessToken: string,
+  limit = 20,
+  timeRange: "short_term" | "medium_term" | "long_term" = "medium_term",
+): Promise<SpotifyTopArtist[]> {
+  const capped = Math.max(1, Math.min(50, limit));
+  const response = await spotifyGet(`/me/top/artists?time_range=${timeRange}&limit=${capped}`, accessToken);
+  if (!response.ok) {
+    throw new Error(`Top artists request failed (${response.status}).`);
+  }
+
+  const payload = (await response.json()) as {
+    items?: Array<{ id?: string; name?: string; popularity?: number; genres?: string[] }>;
+  };
+
+  return (payload.items ?? [])
+    .filter((item): item is { id: string; name: string; popularity?: number; genres?: string[] } => Boolean(item.id && item.name))
+    .map((item) => ({
+      id: item.id,
+      name: item.name,
+      popularity: Math.max(0, Math.min(100, item.popularity ?? 50)),
+      genres: (item.genres ?? []).slice(0, 6),
+    }));
+}
+
 export async function fetchSavedTrackIds(accessToken: string, limit = 50): Promise<string[]> {
   const capped = Math.max(1, Math.min(50, limit));
   const response = await spotifyGet(`/me/tracks?limit=${capped}`, accessToken);
@@ -290,20 +322,41 @@ export async function fetchTrackVector(trackId: string, accessToken: string): Pr
     ? Math.max(0, Math.min(1, (year - 1960) / (new Date().getFullYear() - 1960)))
     : 0.5;
 
+  const seed = track.id
+    .split("")
+    .reduce((sum, ch, idx) => (sum + ch.charCodeAt(0) * (idx + 7)) % 10007, 0);
+  const seedA = ((seed % 997) + 1) / 998;
+  const seedB = (((seed * 7) % 991) + 1) / 992;
+  const seedC = (((seed * 17) % 983) + 1) / 984;
+
+  let artistPopularityNorm = popularity;
+  try {
+    const leadArtistId = track.artists?.[0]?.id;
+    if (leadArtistId) {
+      const artistRes = await spotifyGet(`/artists/${leadArtistId}`, accessToken);
+      if (artistRes.ok) {
+        const artistPayload = (await artistRes.json()) as { popularity?: number; genres?: string[] };
+        artistPopularityNorm = Math.max(0, Math.min(100, artistPayload.popularity ?? track.popularity ?? 50)) / 100;
+      }
+    }
+  } catch {
+    // Keep metadata fallback resilient when artist metadata calls fail.
+  }
+
   const metadataVector = [
-    popularity,
-    (popularity * 0.75 + releaseRecency * 0.25),
-    0.5,
-    0.35 + popularity * 0.5,
-    explicit ? 0 : 1,
-    explicit ? 0.6 : 0.2,
-    1 - popularity * 0.6,
-    0.15,
-    0.25,
-    0.45 + popularity * 0.4,
-    0.5,
-    4 / 7,
-    durationNorm,
+    0.1 + popularity * 0.8,
+    0.08 + artistPopularityNorm * 0.84,
+    seedA,
+    0.15 + (0.6 * popularity + 0.25 * seedB),
+    explicit ? 0.18 : 0.86,
+    explicit ? 0.62 + seedC * 0.22 : 0.14 + seedB * 0.22,
+    Math.max(0.05, 1 - popularity * 0.72),
+    Math.max(0.02, (1 - artistPopularityNorm) * 0.8 + seedA * 0.15),
+    0.12 + seedC * 0.78,
+    0.18 + releaseRecency * 0.72,
+    Math.max(0.05, Math.min(0.98, durationNorm * 0.65 + seedB * 0.25)),
+    3 / 7 + (seedA - 0.5) * 0.08,
+    Math.max(0.05, Math.min(0.98, durationNorm)),
   ];
 
   return {

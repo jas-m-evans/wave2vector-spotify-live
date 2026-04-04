@@ -23,6 +23,7 @@ import {
   createSessionId,
   createStateToken,
   exchangeCodeForToken,
+  fetchTopArtists,
   fetchRecentlyPlayedTrackIds,
   fetchSavedTrackIds,
   fetchSpotifyProfile,
@@ -77,6 +78,12 @@ const vectorFeatureNames = [
   "duration",
 ];
 
+const artistWindowWeights: Record<"short_term" | "medium_term" | "long_term", number> = {
+  short_term: 1.25,
+  medium_term: 1,
+  long_term: 0.8,
+};
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.resolve(__dirname, "../public");
@@ -128,7 +135,11 @@ async function cacheTrack(trackId: string, tokens: SpotifyTokens): Promise<Track
   }
   const track = await fetchTrackVector(trackId, tokens.accessToken);
   library.set(trackId, track);
-  await persistLibraryToDisk(library);
+  try {
+    await persistLibraryToDisk(library);
+  } catch {
+    // Ignore ephemeral filesystem failures (e.g. serverless runtimes without writable disk).
+  }
   return track;
 }
 
@@ -184,6 +195,123 @@ function topTasteSignals(vector: number[]): string[] {
     .sort((a, b) => b.value - a.value)
     .slice(0, 3)
     .map((item) => vectorFeatureNames[item.idx] ?? `feature_${item.idx + 1}`);
+}
+
+function buildModelInsights(session: SessionRecord) {
+  const tasteVector = session.tasteVector ?? [];
+  const topFeatures = tasteVector
+    .map((value, idx) => ({
+      feature: vectorFeatureNames[idx] ?? `feature_${idx + 1}`,
+      value: Number(value.toFixed(4)),
+    }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 6);
+
+  const lowFeatures = tasteVector
+    .map((value, idx) => ({
+      feature: vectorFeatureNames[idx] ?? `feature_${idx + 1}`,
+      value: Number(value.toFixed(4)),
+    }))
+    .sort((a, b) => a.value - b.value)
+    .slice(0, 4);
+
+  const sync = session.lastSyncStats;
+  const mode = sync
+    ? sync.metadataFallbackCount > 0 && sync.cached > 0
+      ? (sync.metadataFallbackCount === sync.cached ? "metadata-only" : "hybrid")
+      : "spotify-audio-features"
+    : "unknown";
+
+  return {
+    mode,
+    vectorDims: tasteVector.length,
+    topFeatures,
+    lowFeatures,
+    sourceCounts: sync?.sourceCounts ?? {},
+    sampled: sync?.sampled ?? 0,
+    cached: sync?.cached ?? 0,
+    metadataFallbackCount: sync?.metadataFallbackCount ?? 0,
+    vectorFailureCount: sync?.vectorFailureCount ?? 0,
+    fallbackUsed: sync?.fallbackUsed ?? false,
+    topGenres: session.artistInsights?.topGenres ?? [],
+    topArtists: session.artistInsights?.topArtists ?? [],
+    updatedAt: session.tasteUpdatedAt,
+  };
+}
+
+type ProjectionRole = "target" | "taste" | "selected" | "candidate";
+
+type ProjectionInput = {
+  id: string;
+  label: string;
+  role: ProjectionRole;
+  vector: number[];
+  score?: number;
+};
+
+function buildProjectionMap(points: ProjectionInput[], mode: "taste-only" | "now-playing") {
+  if (!points.length) {
+    return null;
+  }
+
+  const dims = points[0].vector.length;
+  if (!dims) {
+    return null;
+  }
+
+  const variances = new Array<number>(dims).fill(0);
+  const means = new Array<number>(dims).fill(0);
+  for (const point of points) {
+    for (let i = 0; i < dims; i += 1) {
+      means[i] += point.vector[i];
+    }
+  }
+  for (let i = 0; i < dims; i += 1) {
+    means[i] /= points.length;
+  }
+  for (const point of points) {
+    for (let i = 0; i < dims; i += 1) {
+      const delta = point.vector[i] - means[i];
+      variances[i] += delta * delta;
+    }
+  }
+
+  const axisOrder = variances
+    .map((variance, idx) => ({ variance, idx }))
+    .sort((a, b) => b.variance - a.variance)
+    .map((item) => item.idx);
+
+  const axisX = axisOrder[0] ?? 0;
+  const axisY = axisOrder.find((idx) => idx !== axisX) ?? ((axisX + 1) % Math.max(1, dims));
+
+  const raw = points.map((point) => ({
+    ...point,
+    xRaw: point.vector[axisX] ?? 0,
+    yRaw: point.vector[axisY] ?? 0,
+  }));
+
+  const minX = Math.min(...raw.map((point) => point.xRaw));
+  const maxX = Math.max(...raw.map((point) => point.xRaw));
+  const minY = Math.min(...raw.map((point) => point.yRaw));
+  const maxY = Math.max(...raw.map((point) => point.yRaw));
+  const spanX = Math.max(1e-9, maxX - minX);
+  const spanY = Math.max(1e-9, maxY - minY);
+
+  return {
+    mode,
+    axes: {
+      x: vectorFeatureNames[axisX] ?? `feature_${axisX + 1}`,
+      y: vectorFeatureNames[axisY] ?? `feature_${axisY + 1}`,
+    },
+    points: raw.map((point) => ({
+      id: point.id,
+      label: point.label,
+      role: point.role,
+      score: point.score,
+      x: Number(((point.xRaw - minX) / spanX).toFixed(4)),
+      y: Number(((point.yRaw - minY) / spanY).toFixed(4)),
+    })),
+  };
 }
 
 async function recomputeRoomAnalytics(roomName: string, k = 10): Promise<void> {
@@ -309,6 +437,29 @@ async function refreshTasteProfile(session: SessionRecord): Promise<{
     }
   }
 
+  const genreWeights = new Map<string, number>();
+  const topArtistsDedup = new Map<string, { id: string; name: string; popularity: number; genres: string[] }>();
+  for (const window of windows) {
+    try {
+      const artists = await fetchTopArtists(session.tokens.accessToken, 20, window);
+      const windowWeight = artistWindowWeights[window];
+      for (const artist of artists) {
+        if (!topArtistsDedup.has(artist.id)) {
+          topArtistsDedup.set(artist.id, artist);
+        }
+        for (const genre of artist.genres) {
+          const key = genre.trim().toLowerCase();
+          if (!key) {
+            continue;
+          }
+          genreWeights.set(key, (genreWeights.get(key) ?? 0) + windowWeight);
+        }
+      }
+    } catch (error) {
+      sourceErrors.push(`${window}_artists: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   // Fallback for users with sparse top-tracks history.
   if (mergedTopIds.length < 12) {
     try {
@@ -372,6 +523,25 @@ async function refreshTasteProfile(session: SessionRecord): Promise<{
   const fallbackUsed = Boolean(libraryFallback && !centroid);
   session.tasteVector = centroid ?? libraryFallback;
   session.tasteUpdatedAt = Date.now();
+  session.lastSyncStats = {
+    sampled: topIds.length,
+    cached: vectors.length,
+    metadataFallbackCount,
+    vectorFailureCount,
+    sourceCounts,
+    fallbackUsed,
+    updatedAt: session.tasteUpdatedAt,
+  };
+  session.artistInsights = {
+    topGenres: [...genreWeights.entries()]
+      .map(([genre, weight]) => ({ genre, weight: Number(weight.toFixed(2)) }))
+      .sort((a, b) => b.weight - a.weight)
+      .slice(0, 12),
+    topArtists: [...topArtistsDedup.values()]
+      .sort((a, b) => b.popularity - a.popularity)
+      .slice(0, 10),
+    updatedAt: session.tasteUpdatedAt,
+  };
   sessions.set(session.id, session);
 
   return {
@@ -548,6 +718,7 @@ app.post("/api/sync/bootstrap", async (req, res) => {
         hasTasteVector: Boolean(session.tasteVector),
         dims: session.tasteVector?.length ?? 0,
         updatedAt: session.tasteUpdatedAt,
+        modelInsights: buildModelInsights(session),
       });
     }
 
@@ -579,6 +750,7 @@ app.post("/api/sync/bootstrap", async (req, res) => {
       dims: session.tasteVector?.length ?? 0,
       updatedAt: session.tasteUpdatedAt,
       bootstrapCompletedAt: session.bootstrapCompletedAt,
+      modelInsights: buildModelInsights(session),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -794,6 +966,7 @@ app.get("/api/recommendations/live", async (req, res) => {
             dims: session.tasteVector?.length ?? 0,
             updatedAt: session.tasteUpdatedAt,
           },
+          modelInsights: buildModelInsights(session),
           controls: {
             k: Math.max(1, k),
             diversity,
@@ -831,6 +1004,24 @@ app.get("/api/recommendations/live", async (req, res) => {
           reasons: explainSimilarity(session.tasteVector ?? [], item.vector),
         }));
 
+        const selectedIds = new Set(tasteOnly.map((item) => item.trackId));
+        const projectionPoints: ProjectionInput[] = [
+          {
+            id: "taste-centroid",
+            label: "Taste centroid",
+            role: "taste",
+            vector: tasteTarget.vector,
+          },
+          ...tasteCandidates.slice(0, Math.max(12, k * 3)).map((item) => ({
+            id: item.trackId,
+            label: `${item.name} - ${item.artist}`,
+            role: selectedIds.has(item.trackId) ? "selected" as const : "candidate" as const,
+            vector: item.vector,
+            score: item.similarity,
+          })),
+        ];
+        const projectionMap = buildProjectionMap(projectionPoints, "taste-only");
+
         return res.json({
           nowPlaying,
           recommendations: tasteOnly,
@@ -839,11 +1030,13 @@ app.get("/api/recommendations/live", async (req, res) => {
             dims: session.tasteVector.length,
             updatedAt: session.tasteUpdatedAt,
           },
+          modelInsights: buildModelInsights(session),
           controls: {
             k: Math.max(1, k),
             diversity,
             tasteWeight,
           },
+          projectionMap,
           warning: "No active playback detected. Showing taste-only recommendations.",
         });
       }
@@ -856,11 +1049,13 @@ app.get("/api/recommendations/live", async (req, res) => {
           dims: session.tasteVector?.length ?? 0,
           updatedAt: session.tasteUpdatedAt,
         },
+        modelInsights: buildModelInsights(session),
         controls: {
           k: Math.max(1, k),
           diversity,
           tasteWeight,
         },
+        projectionMap: null,
         warning: "No active playback detected. Play a track to generate live recommendations.",
       });
     }
@@ -893,7 +1088,8 @@ app.get("/api/recommendations/live", async (req, res) => {
       })
       .sort((a, b) => b.blendedScore - a.blendedScore);
 
-    const reranked = mmrRerank(rescored, k, diversity).map((item) => ({
+    const rerankedInternal = mmrRerank(rescored, k, diversity);
+    const reranked = rerankedInternal.map((item) => ({
       trackId: item.trackId,
       name: item.name,
       artist: item.artist,
@@ -906,6 +1102,32 @@ app.get("/api/recommendations/live", async (req, res) => {
       reasons: item.reasons,
     }));
 
+    const selectedIds = new Set(rerankedInternal.map((item) => item.trackId));
+    const projectionPoints: ProjectionInput[] = [
+      {
+        id: `target-${target.trackId}`,
+        label: `${target.name} - ${target.artist}`,
+        role: "target",
+        vector: target.vector,
+      },
+      ...(session.tasteVector?.length
+        ? [{
+          id: "taste-centroid",
+          label: "Taste centroid",
+          role: "taste" as const,
+          vector: session.tasteVector,
+        }]
+        : []),
+      ...rescored.slice(0, Math.max(14, k * 3)).map((item) => ({
+        id: item.trackId,
+        label: `${item.name} - ${item.artist}`,
+        role: selectedIds.has(item.trackId) ? "selected" as const : "candidate" as const,
+        vector: item.vector,
+        score: item.blendedScore,
+      })),
+    ];
+    const projectionMap = buildProjectionMap(projectionPoints, "now-playing");
+
     return res.json({
       nowPlaying,
       target,
@@ -913,12 +1135,14 @@ app.get("/api/recommendations/live", async (req, res) => {
         hasTasteVector: Boolean(session.tasteVector),
         updatedAt: session.tasteUpdatedAt,
       },
+      modelInsights: buildModelInsights(session),
       controls: {
         k: Math.max(1, k),
         diversity,
         tasteWeight,
       },
       recommendations: reranked,
+      projectionMap,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

@@ -196,6 +196,75 @@
         background: #f8f8f8;
         white-space: pre-wrap;
       }
+      .insight-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .bar-list {
+        display: grid;
+        gap: 6px;
+      }
+      .bar-row {
+        display: grid;
+        grid-template-columns: 120px 1fr 44px;
+        gap: 8px;
+        align-items: center;
+        font-size: 0.82rem;
+      }
+      .bar-track {
+        border: 1px solid #111111;
+        height: 10px;
+        background: #ffffff;
+      }
+      .bar-fill {
+        height: 100%;
+        background: repeating-linear-gradient(90deg, #111111 0 5px, #ffffff 5px 10px);
+      }
+      .insight-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .insight-chip {
+        border: 1px solid #111111;
+        padding: 3px 6px;
+        font-size: 0.78rem;
+        background: #ffffff;
+      }
+      .insight-meta {
+        font-size: 0.84rem;
+        margin-bottom: 8px;
+      }
+      .projection-wrap {
+        margin-top: 12px;
+        border: 2px solid #111111;
+        background: #ffffff;
+        padding: 8px;
+      }
+      .projection-axis {
+        font-size: 0.8rem;
+        margin-bottom: 6px;
+      }
+      .projection-svg {
+        width: 100%;
+        height: 260px;
+        border: 1px dashed #111111;
+        background: #fbfbfb;
+      }
+      .projection-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 8px;
+        font-size: 0.78rem;
+      }
+      .legend-pill {
+        border: 1px solid #111111;
+        background: #fff;
+        padding: 2px 6px;
+      }
       @media (max-width: 760px) {
         .row {
           grid-template-columns: 1fr;
@@ -204,6 +273,9 @@
           grid-template-columns: 1fr;
         }
         .room-grid {
+          grid-template-columns: 1fr;
+        }
+        .insight-grid {
           grid-template-columns: 1fr;
         }
       }
@@ -246,6 +318,11 @@
       <section class="panel">
         <h2>Taste Profile</h2>
         <div id="profile"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Model Insights</h2>
+        <div id="model-insights"><p class="muted">Insights appear after a successful sync.</p></div>
       </section>
 
       <section class="panel">

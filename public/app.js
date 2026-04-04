@@ -16,6 +16,7 @@ const syncStatusEl = document.getElementById("sync-status");
 const syncPercentEl = document.getElementById("sync-percent");
 const syncMeterFillEl = document.getElementById("sync-meter-fill");
 const syncLogEl = document.getElementById("sync-log");
+const modelInsightsEl = document.getElementById("model-insights");
 
 const roomNameInput = document.getElementById("room-name");
 const participantNameInput = document.getElementById("participant-name");
@@ -40,6 +41,22 @@ let localSharedState = {
   tasteProfile: null,
   nowPlayingState: null,
 };
+
+const featureLabels = [
+  "danceability",
+  "energy",
+  "key",
+  "loudness",
+  "mode",
+  "speechiness",
+  "acousticness",
+  "instrumentalness",
+  "liveness",
+  "valence",
+  "tempo",
+  "time_signature",
+  "duration",
+];
 
 participantNameInput.value = localStorage.getItem("participantName") ?? "";
 roomNameInput.value = localStorage.getItem("roomName") ?? "";
@@ -185,6 +202,160 @@ function renderProfile(profile) {
   `;
 }
 
+function renderBarRows(rows) {
+  if (!rows?.length) {
+    return `<p class="muted">No feature data yet.</p>`;
+  }
+
+  return `
+    <div class="bar-list">
+      ${rows
+        .map((row) => {
+          const value = Number(row.value ?? 0);
+          const width = Math.max(0, Math.min(100, Math.round(value * 100)));
+          return `
+            <div class="bar-row">
+              <span>${row.feature}</span>
+              <div class="bar-track"><div class="bar-fill" style="width:${width}%;"></div></div>
+              <span>${(value * 100).toFixed(0)}%</span>
+            </div>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function roleColor(role) {
+  switch (role) {
+    case "target":
+      return "#111111";
+    case "taste":
+      return "#2f6f2f";
+    case "selected":
+      return "#005f99";
+    default:
+      return "#888888";
+  }
+}
+
+function renderProjectionMap(map) {
+  if (!map?.points?.length) {
+    return `<p class="muted" style="margin-top:10px;">Projection map appears after recommendations are generated.</p>`;
+  }
+
+  const width = 620;
+  const height = 250;
+  const pad = 24;
+  const toX = (x) => pad + x * (width - pad * 2);
+  const toY = (y) => height - (pad + y * (height - pad * 2));
+
+  const circles = map.points
+    .map((point) => {
+      const cx = toX(Number(point.x ?? 0.5));
+      const cy = toY(Number(point.y ?? 0.5));
+      const r = point.role === "target" ? 6 : point.role === "selected" ? 5 : 3.5;
+      const stroke = point.role === "selected" ? "#111111" : "#ffffff";
+      return `<circle cx="${cx.toFixed(2)}" cy="${cy.toFixed(2)}" r="${r}" fill="${roleColor(point.role)}" stroke="${stroke}" stroke-width="1.2"><title>${point.label} [${point.role}]${typeof point.score === "number" ? ` ${(point.score * 100).toFixed(1)}%` : ""}</title></circle>`;
+    })
+    .join("");
+
+  const selectedLabels = map.points
+    .filter((point) => point.role === "selected")
+    .slice(0, 6)
+    .map((point) => {
+      const x = toX(Number(point.x ?? 0.5));
+      const y = toY(Number(point.y ?? 0.5));
+      const safeLabel = point.label.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      return `<text x="${(x + 7).toFixed(1)}" y="${(y - 7).toFixed(1)}" font-size="10" fill="#111111">${safeLabel.slice(0, 24)}</text>`;
+    })
+    .join("");
+
+  return `
+    <div class="projection-wrap">
+      <div class="projection-axis"><strong>2D projection:</strong> X = ${map.axes?.x ?? "feature_x"}, Y = ${map.axes?.y ?? "feature_y"} (${map.mode ?? "unknown"})</div>
+      <svg class="projection-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
+        <line x1="${pad}" y1="${height - pad}" x2="${width - pad}" y2="${height - pad}" stroke="#666" stroke-width="1" />
+        <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${height - pad}" stroke="#666" stroke-width="1" />
+        ${circles}
+        ${selectedLabels}
+      </svg>
+      <div class="projection-legend">
+        <span class="legend-pill">target = black</span>
+        <span class="legend-pill">taste centroid = green</span>
+        <span class="legend-pill">selected recommendations = blue</span>
+        <span class="legend-pill">other candidates = gray</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderModelInsights(insights, projectionMap = null) {
+  if (!modelInsightsEl) {
+    return;
+  }
+
+  if (!insights || !insights.vectorDims) {
+    modelInsightsEl.innerHTML = `<p class="muted">Insights appear after a successful sync.</p>`;
+    return;
+  }
+
+  const sourceEntries = Object.entries(insights.sourceCounts ?? {});
+  const sourceTotal = sourceEntries.reduce((sum, [, count]) => sum + Number(count || 0), 0);
+  const sourceRows = sourceEntries.length
+    ? sourceEntries
+      .map(([name, count]) => {
+        const fraction = sourceTotal ? Number(count) / sourceTotal : 0;
+        return { feature: name, value: fraction };
+      })
+      .sort((a, b) => b.value - a.value)
+    : [];
+
+  const topFeatures = insights.topFeatures?.length
+    ? insights.topFeatures
+    : featureLabels.map((feature, idx) => ({ feature, value: 0 }));
+
+  const updated = insights.updatedAt ? new Date(insights.updatedAt).toLocaleString() : "unknown";
+
+  modelInsightsEl.innerHTML = `
+    <div class="insight-meta">
+      <strong>Mode:</strong> ${insights.mode} | <strong>Vector dims:</strong> ${insights.vectorDims} | <strong>Updated:</strong> ${updated}<br />
+      <strong>Sampled:</strong> ${insights.sampled ?? 0} | <strong>Cached:</strong> ${insights.cached ?? 0} | <strong>Metadata fallback:</strong> ${insights.metadataFallbackCount ?? 0} | <strong>Failures:</strong> ${insights.vectorFailureCount ?? 0}
+    </div>
+    <div class="insight-grid">
+      <div>
+        <h3 style="margin:0 0 8px 0;">Top Taste Signals</h3>
+        ${renderBarRows(topFeatures)}
+      </div>
+      <div>
+        <h3 style="margin:0 0 8px 0;">Spotify Source Mix</h3>
+        ${renderBarRows(sourceRows)}
+      </div>
+    </div>
+    <div class="insight-grid" style="margin-top:10px;">
+      <div>
+        <h3 style="margin:0 0 8px 0;">Top Genres (free tier)</h3>
+        <div class="insight-chips">
+          ${(insights.topGenres ?? [])
+            .slice(0, 12)
+            .map((genre) => `<span class="insight-chip">${genre.genre} (${genre.weight.toFixed(2)})</span>`)
+            .join("") || `<span class="muted">No genre data returned by Spotify yet.</span>`}
+        </div>
+      </div>
+      <div>
+        <h3 style="margin:0 0 8px 0;">Top Artists (free tier)</h3>
+        <div class="insight-chips">
+          ${(insights.topArtists ?? [])
+            .slice(0, 8)
+            .map((artist) => `<span class="insight-chip">${artist.name} (${artist.popularity})</span>`)
+            .join("") || `<span class="muted">No artist data returned by Spotify yet.</span>`}
+        </div>
+      </div>
+    </div>
+    ${renderProjectionMap(projectionMap)}
+  `;
+}
+
 function renderParticipants(room) {
   const participants = room?.participants ?? [];
   if (!participants.length) {
@@ -284,6 +455,7 @@ async function refresh() {
   renderNowPlaying(payload.nowPlaying);
   renderRecommendations(payload.recommendations);
   renderProfile(payload.profile);
+  renderModelInsights(payload.modelInsights, payload.projectionMap ?? null);
 
   if (payload.controls) {
     diversityInput.value = String(payload.controls.diversity);
@@ -347,6 +519,8 @@ async function bootstrapSync(force = false) {
   } else {
     setSyncStatus(`Spotify sync complete. Taste vector updated (${payload.dims ?? 0} dims).`);
   }
+
+  renderModelInsights(payload.modelInsights, payload.projectionMap ?? null);
 
   return payload;
 }

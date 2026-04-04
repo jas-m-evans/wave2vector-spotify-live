@@ -10,6 +10,20 @@ export type SessionRecord = {
   tasteVector?: number[];
   tasteUpdatedAt?: number;
   bootstrapCompletedAt?: number;
+  lastSyncStats?: {
+    sampled: number;
+    cached: number;
+    metadataFallbackCount: number;
+    vectorFailureCount: number;
+    sourceCounts: Record<string, number>;
+    fallbackUsed: boolean;
+    updatedAt: number;
+  };
+  artistInsights?: {
+    topGenres: Array<{ genre: string; weight: number }>;
+    topArtists: Array<{ id: string; name: string; popularity: number; genres: string[] }>;
+    updatedAt: number;
+  };
 };
 
 export type LiveKitTokenResponse = {
