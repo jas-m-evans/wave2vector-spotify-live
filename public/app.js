@@ -23,7 +23,6 @@ const recommendationMapEl = document.getElementById("recommendation-map");
 const roomNameInput = document.getElementById("room-name");
 const participantNameInput = document.getElementById("participant-name");
 const joinRoomBtn = document.getElementById("join-room");
-const openRoomBtn = document.getElementById("open-room");
 const leaveRoomBtn = document.getElementById("leave-room");
 const recomputeRoomBtn = document.getElementById("recompute-room");
 const copyRoomBtn = document.getElementById("copy-room");
@@ -33,11 +32,11 @@ const shareMenuEl = document.getElementById("share-menu");
 const shareCopyLinkBtn = document.getElementById("share-copy-link");
 const shareEmailLinkBtn = document.getElementById("share-email-link");
 const roomShareUrlInput = document.getElementById("room-share-url");
-const publishRoomBtn = document.getElementById("publish-room");
 const refreshHistoryBtn = document.getElementById("refresh-history");
 const roomHistoryEl = document.getElementById("room-history");
 const roomStatusEl = document.getElementById("room-status");
 const roomHelpEl = document.getElementById("room-help");
+const roomIntroEl = document.getElementById("room-intro");
 const activeRoomsEl = document.getElementById("active-rooms");
 const participantListEl = document.getElementById("participant-list");
 const compatibilityEl = document.getElementById("compatibility");
@@ -65,7 +64,6 @@ let activeParticipantName = "";
 let spotifyDisplayName = "";
 let livekitRoom = null;
 let isAuthenticated = false;
-let roomPublished = false;
 let lastRoomParticipants = 0;
 let streamMode = "live";
 let roomHistory = [];
@@ -329,6 +327,21 @@ function setRoomHelp(text) {
   roomHelpEl.textContent = text;
 }
 
+function setRoomIntro(participantCount = 0) {
+  if (!roomIntroEl) {
+    return;
+  }
+  const signals = localSharedState?.tasteProfile?.topSignals;
+  const highlightText = Array.isArray(signals) && signals.length
+    ? signals.slice(0, 3).join(", ")
+    : "energy, rhythm, and emotional tone";
+  if (participantCount < 2) {
+    roomIntroEl.textContent = `This is your space. You have great music taste based on ${highlightText}. Invite one friend and this page will evolve into a shared compatibility view.`;
+    return;
+  }
+  roomIntroEl.textContent = `This is your shared space. Your taste anchors (${highlightText}) are now blending with your friend's profile for compatibility and mutual picks.`;
+}
+
 function getShareRoomUrl(roomName) {
   if (!roomName) {
     return "";
@@ -411,14 +424,12 @@ function renderRoomHistory(snapshots) {
         const response = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/resume`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ snapshotId, published: true }),
+          body: JSON.stringify({ snapshotId }),
         });
         const payload = await response.json();
         if (!response.ok) {
           throw new Error(payload.error ?? "Failed to resume room snapshot");
         }
-        roomPublished = Boolean(payload.room?.published);
-        setPublishButtonLabel();
         setRoomStatus(`Resumed room space from snapshot ${snapshotId.slice(0, 8)}...`, true);
         await refreshRoomPanels();
       } catch (error) {
@@ -447,19 +458,12 @@ async function loadRoomHistory() {
   }
 }
 
-function setPublishButtonLabel() {
-  if (!publishRoomBtn) {
-    return;
-  }
-  publishRoomBtn.textContent = roomPublished ? "Unpublish Room" : "Publish Room";
-}
-
 function renderActiveRooms(rooms) {
   if (!activeRoomsEl) {
     return;
   }
   if (!rooms?.length) {
-    activeRoomsEl.innerHTML = `<span class="muted">No published rooms yet.</span>`;
+    activeRoomsEl.innerHTML = `<span class="muted">No shared rooms visible yet. Ask your friend to send you their room link.</span>`;
     return;
   }
 
@@ -470,16 +474,23 @@ function renderActiveRooms(rooms) {
           <strong>${room.roomName}</strong><br />
           <span class="muted">connected: ${room.connectedCount} | taste-ready: ${room.tasteReadyCount}</span>
         </div>
-        <button type="button" data-join-room="${room.roomName}">Join</button>
+        <button type="button" data-join-room="${room.roomName}">Join Shared Room</button>
       </div>
     `)
     .join("");
 
   activeRoomsEl.querySelectorAll("button[data-join-room]").forEach((button) => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
       const roomName = button.getAttribute("data-join-room");
       if (roomName) {
         roomNameInput.value = roomName;
+        try {
+          await joinRoom();
+          setActiveScreen("room");
+        } catch (error) {
+          logEvent("rooms", "Join shared room failed", error);
+          setRoomStatus(error instanceof Error ? error.message : String(error));
+        }
       }
     });
   });
@@ -797,19 +808,18 @@ function renderModelInsights(insights) {
 function renderParticipants(room) {
   const participants = room?.participants ?? [];
   lastRoomParticipants = participants.filter((participant) => participant.connected).length;
-  roomPublished = Boolean(room?.published);
-  setPublishButtonLabel();
+  setRoomIntro(lastRoomParticipants);
 
   if (!participants.length) {
     participantListEl.innerHTML = `<p class="muted">No participants yet.</p>`;
-    setRoomHelp("Create/join a room, then share this exact room name with one other person. Compatibility and mutual picks appear once both users are connected and synced.");
+    setRoomHelp("Create your room, then share your room link with one person. Compatibility and mutual picks appear after both of you are connected and synced.");
     return;
   }
 
   if (lastRoomParticipants < 2) {
-    setRoomHelp("Only one person is here. Have a second user join the same room name, then click Recompute Compatibility.");
+    setRoomHelp("You are in your space. Have one friend join via your shared room link, then click Recompute Compatibility.");
   } else {
-    setRoomHelp("Room is active with multiple users. Recompute Compatibility anytime either person refreshes sync or playback changes.");
+    setRoomHelp("Both profiles are active. Recompute Compatibility anytime either of you refreshes sync or playback changes.");
   }
 
   participantListEl.innerHTML = participants
@@ -1104,6 +1114,7 @@ async function refreshRoomPanels() {
   await loadActiveRooms();
 
   if (!activeRoomName) {
+    setRoomIntro(0);
     renderParticipants(null);
     renderCompatibility(null);
     renderMutualRecommendations([]);
@@ -1242,10 +1253,9 @@ async function leaveRoom() {
 
   activeRoomName = "";
   activeParticipantName = "";
-  roomPublished = false;
   lastRoomParticipants = 0;
   updateShareUrlInput(roomNameInput.value.trim());
-  setPublishButtonLabel();
+  setRoomIntro(0);
   localSharedState = { tasteProfile: null, nowPlayingState: null };
   setRoomStatus("Not connected to a room", false);
   await refreshRoomPanels();
@@ -1429,34 +1439,6 @@ shareEmailLinkBtn?.addEventListener("click", async () => {
   shareMenuToggleBtn?.setAttribute("aria-expanded", "false");
 });
 
-publishRoomBtn?.addEventListener("click", async () => {
-  const roomName = activeRoomName || roomNameInput.value.trim();
-  if (!roomName) {
-    setRoomStatus("Join or enter a room name first.");
-    return;
-  }
-  try {
-    logEvent("rooms", "Toggle publish requested", { roomName, next: !roomPublished });
-    const next = !roomPublished;
-    const response = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/publish`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ published: next }),
-    });
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload.error ?? "Could not update room visibility");
-    }
-    roomPublished = Boolean(payload.published);
-    setPublishButtonLabel();
-    setRoomStatus(roomPublished ? `Room ${roomName} published.` : `Room ${roomName} hidden.`, true);
-    await loadActiveRooms();
-  } catch (error) {
-    logEvent("rooms", "Toggle publish failed", error);
-    setRoomStatus(error instanceof Error ? error.message : String(error));
-  }
-});
-
 refreshHistoryBtn?.addEventListener("click", () => {
   logEvent("rooms", "Manual history refresh requested");
   loadRoomHistory().catch((error) => setDebug(String(error)));
@@ -1536,16 +1518,6 @@ lobbyViewBtn?.addEventListener("click", () => {
   logEvent("ui", "Switched to Lobby screen");
 });
 
-openRoomBtn?.addEventListener("click", () => {
-  if (!activeRoomName) {
-    setRoomStatus("Join a room from Lobby first.");
-    setActiveScreen("lobby");
-    return;
-  }
-  setActiveScreen("room");
-  logEvent("ui", "Opened Room screen from Lobby");
-});
-
 recEl.addEventListener("mouseover", (event) => {
   const target = event.target;
   if (!(target instanceof Element)) {
@@ -1600,11 +1572,11 @@ loadConfigStatus().catch((error) => {
 
 refreshRoomPanels().catch((error) => setDebug(String(error)));
 updateControlLabels();
-setPublishButtonLabel();
 setSyncPhaseState("auth");
 setFeatureGate(true);
 updateShareUrlInput(roomNameInput.value.trim());
 setActiveScreen("home");
+setRoomIntro(0);
 loadActiveRooms().catch(() => {
   // Active room directory is optional.
 });

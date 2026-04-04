@@ -418,9 +418,16 @@
       }
       .field-with-action {
         position: relative;
+        display: block;
       }
       .field-with-action input {
         padding-right: 54px;
+      }
+      .room-name-field .tiny-icon-btn.inside-action {
+        position: absolute;
+        right: 6px;
+        top: 32px;
+        transform: none;
       }
       .field-with-action .inside-action {
         position: absolute;
@@ -637,7 +644,7 @@
             <div class="pitch-card">
               <svg class="pitch-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16"></rect><path d="M8 8h8v8H8z"></path></svg>
               <strong>Live Lobby</strong>
-              <p class="muted">Create rooms, publish them, and bring friends into the same session.</p>
+              <p class="muted">Create a room, share your link, and bring a friend into the same session.</p>
             </div>
             <div class="pitch-card">
               <svg class="pitch-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18l5-6 4 3 7-9"></path><path d="M4 20h16"></path></svg>
@@ -710,24 +717,22 @@
         <section class="panel">
           <h2>Lobby</h2>
           <p class="muted">Jam out with friends.</p>
-          <div class="helper-note">Browse rooms, publish yours, and join one room at a time.</div>
+          <div class="helper-note">Create your room, share the link, and invite one person at a time.</div>
           <div class="room-grid">
-            <label>
+            <label class="field-with-action room-name-field">
               Room Name
               <input id="room-name" placeholder="friday-vibes" />
+              <button id="copy-room" class="tiny-icon-btn inside-action" title="Copy room name" aria-label="Copy room name">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11"></rect><rect x="4" y="4" width="11" height="11"></rect></svg>
+              </button>
             </label>
             <label>
               Display Name
               <input id="participant-name" placeholder="Alex" />
             </label>
             <div>
-              <button id="join-room">Join Room</button>
-              <button id="open-room">Open Room</button>
+              <button id="join-room">Create Room</button>
               <button id="leave-room">Leave</button>
-              <button id="copy-room" class="tiny-icon-btn" title="Copy room name" aria-label="Copy room name">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11"></rect><rect x="4" y="4" width="11" height="11"></rect></svg>
-              </button>
-              <button id="publish-room">Publish</button>
             </div>
           </div>
           <div class="share-row">
@@ -748,8 +753,8 @@
             </div>
           </div>
           <div id="room-status" class="status-badge muted">Not connected to a room</div>
-          <div id="room-help" class="helper-note instructions muted">Once connected, open the Room screen for compatibility and shared recommendations.</div>
-          <div id="active-rooms" class="active-rooms muted">No published rooms yet.</div>
+          <div id="room-help" class="helper-note instructions muted">Once your room is created, share the link. Your friend can join and unlock shared compatibility.</div>
+          <div id="active-rooms" class="active-rooms muted">Rooms shared with you will appear here.</div>
           <div>
             <button id="refresh-history">Refresh Space History</button>
             <div id="room-history" class="history-list muted">Space history appears after a room has had at least one live session.</div>
@@ -759,7 +764,8 @@
 
       <div id="screen-room" class="screen" data-requires-account="true">
         <section class="panel">
-          <h2>Room</h2>
+          <h2>Your Space</h2>
+          <p id="room-intro" class="muted">This is your space. Your taste profile powers recommendations here, and it gets even better once someone joins you.</p>
           <button id="recompute-room">Recompute Compatibility</button>
           <div id="participant-list" style="margin-top:10px;"></div>
         </section>
