@@ -7,14 +7,19 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { computeCompatibility } from "./compatibility.js";
 import {
+  endLiveStream,
+  getRoomBatchHistory,
   getRoomSnapshot,
   getTwoActiveParticipants,
   listActiveRooms,
   markParticipantJoined,
   markParticipantLeft,
+  recordBatchSnapshot,
+  resumeRoomFromBatchSnapshot,
   setCompatibilitySummary,
   setMutualRecommendations,
   setRoomPublished,
+  startLiveStream,
   shareNowPlaying,
   shareTasteProfile,
 } from "./livekitStore.js";
@@ -105,6 +110,13 @@ const roomPublishBodySchema = z.object({
   published: z.boolean(),
 });
 
+const roomResumeBodySchema = z.object({
+  snapshotId: z.string().uuid().optional(),
+  published: z.boolean().optional(),
+});
+
+const recommendationModeSchema = z.enum(["live", "batch"]);
+
 const bootstrapSyncBodySchema = z.object({
   force: z.boolean().optional(),
 });
@@ -188,6 +200,10 @@ function explainSimilarity(target: number[], candidate: number[]): string[] {
 
 function cleanRoomName(raw: string): string {
   return raw.trim().replace(/\s+/g, "-").slice(0, 120);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function isSpotifyRateLimitError(error: unknown): boolean {
@@ -401,7 +417,7 @@ function averageVectors(vectors: number[][]): number[] | undefined {
   return sum.map((value) => value / vectors.length);
 }
 
-async function refreshTasteProfile(session: SessionRecord): Promise<{
+async function refreshTasteProfileBatch(session: SessionRecord): Promise<{
   sampled: number;
   cached: number;
   sourceCounts: Record<string, number>;
@@ -507,6 +523,7 @@ async function refreshTasteProfile(session: SessionRecord): Promise<{
 
   for (const trackId of topIds) {
     try {
+      await sleep(260);
       const vector = await cacheTrack(trackId, session.tokens);
       vectors.push(vector.vector);
       if (vector.source === "metadata-fallback") {
@@ -566,6 +583,61 @@ async function refreshTasteProfile(session: SessionRecord): Promise<{
     metadataFallbackCount,
     vectorFailureCount,
     vectorFailureSamples,
+  };
+}
+
+function buildTasteOnlyRecommendations(session: SessionRecord, k: number) {
+  if (!session.tasteVector?.length) {
+    return null;
+  }
+
+  const tasteTarget: TrackFeatureVector = {
+    trackId: "taste-centroid",
+    name: "Your taste centroid",
+    artist: "Profile-derived",
+    vector: session.tasteVector,
+    source: "cached",
+  };
+
+  const tasteCandidates = recommendNearest(tasteTarget, [...library.values()], Math.max(5, k * 3));
+  const horoscope = topTasteSignals(session.tasteVector)
+    .map((signal) => `You love ${signal}`)
+    .join(". ") + ".";
+  const recommendations = tasteCandidates.slice(0, Math.max(1, k)).map((item) => ({
+    trackId: item.trackId,
+    name: item.name,
+    artist: item.artist,
+    artworkUrl: item.artworkUrl,
+    previewUrl: item.previewUrl,
+    similarity: Number(item.similarity.toFixed(4)),
+    distance: Number(item.distance.toFixed(4)),
+    tasteSimilarity: Number(item.similarity.toFixed(4)),
+    blendedScore: Number(item.similarity.toFixed(4)),
+    reasons: explainSimilarity(session.tasteVector ?? [], item.vector),
+  }));
+
+  const selectedIds = new Set(recommendations.map((item) => item.trackId));
+  const projectionPoints: ProjectionInput[] = [
+    {
+      id: "taste-centroid",
+      label: "Taste centroid",
+      role: "taste",
+      vector: tasteTarget.vector,
+    },
+    ...tasteCandidates.slice(0, Math.max(12, k * 3)).map((item) => ({
+      id: item.trackId,
+      label: `${item.name} - ${item.artist}`,
+      role: selectedIds.has(item.trackId) ? "selected" as const : "candidate" as const,
+      vector: item.vector,
+      score: item.similarity,
+    })),
+  ];
+  const projectionMap = buildProjectionMap(projectionPoints, "taste-only");
+
+  return {
+    horoscope,
+    recommendations,
+    projectionMap,
   };
 }
 
@@ -679,9 +751,11 @@ app.get("/api/library", async (req, res) => {
 app.post("/api/profile/taste-refresh", async (req, res) => {
   try {
     const session = await getActiveSession(req);
-    const result = await refreshTasteProfile(session);
+    session.streamModePreference = "batch";
+    const result = await refreshTasteProfileBatch(session);
     return res.json({
       ...result,
+      streamMode: "batch",
       hasTasteVector: Boolean(session.tasteVector),
       dims: session.tasteVector?.length ?? 0,
       updatedAt: session.tasteUpdatedAt,
@@ -744,7 +818,8 @@ app.post("/api/sync/bootstrap", async (req, res) => {
       }
     }
 
-    const result = await refreshTasteProfile(session);
+    session.streamModePreference = "batch";
+    const result = await refreshTasteProfileBatch(session);
     session.bootstrapCompletedAt = Date.now();
     sessions.set(session.id, session);
 
@@ -759,6 +834,7 @@ app.post("/api/sync/bootstrap", async (req, res) => {
       metadataFallbackCount: result.metadataFallbackCount,
       vectorFailureCount: result.vectorFailureCount,
       vectorFailureSamples: result.vectorFailureSamples,
+      streamMode: "batch",
       hasTasteVector: Boolean(session.tasteVector),
       dims: session.tasteVector?.length ?? 0,
       updatedAt: session.tasteUpdatedAt,
@@ -798,6 +874,7 @@ app.post("/api/livekit/token", async (req, res) => {
 app.post("/api/rooms/:roomName/share-state", async (req, res) => {
   try {
     const session = await getActiveSession(req);
+    session.streamModePreference = "live";
     const roomName = cleanRoomName(req.params.roomName);
     const body = roomShareBodySchema.parse(req.body);
 
@@ -805,6 +882,11 @@ app.post("/api/rooms/:roomName/share-state", async (req, res) => {
       roomName,
       participantName: body.participantName,
       sessionId: session.id,
+    });
+    await startLiveStream({
+      roomName,
+      sessionId: session.id,
+      participantName: body.participantName,
     });
 
     let tasteProfile = null;
@@ -873,9 +955,11 @@ app.post("/api/rooms/:roomName/leave", async (req, res) => {
   try {
     const session = await getActiveSession(req);
     const roomName = cleanRoomName(req.params.roomName);
+    await endLiveStream({ roomName, sessionId: session.id });
     await markParticipantLeft({ roomName, sessionId: session.id });
+    const snapshot = await recordBatchSnapshot(roomName, "stream_end");
     const room = await getRoomSnapshot(roomName);
-    return res.json({ room });
+    return res.json({ room, snapshot });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return res.status(400).json({ error: message });
@@ -908,6 +992,38 @@ app.get("/api/rooms/active", async (req, res) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return res.status(401).json({ error: message });
+  }
+});
+
+app.get("/api/rooms/:roomName/history", async (req, res) => {
+  try {
+    await getActiveSession(req);
+    const roomName = cleanRoomName(req.params.roomName);
+    const limit = Math.max(1, Math.min(40, Number(req.query.limit ?? 20)));
+    const snapshots = await getRoomBatchHistory(roomName, limit);
+    return res.json({ roomName, snapshots });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(401).json({ error: message });
+  }
+});
+
+app.post("/api/rooms/:roomName/resume", async (req, res) => {
+  try {
+    await getActiveSession(req);
+    const roomName = cleanRoomName(req.params.roomName);
+    const body = roomResumeBodySchema.parse(req.body ?? {});
+    const result = await resumeRoomFromBatchSnapshot(roomName, body.snapshotId);
+    if (typeof body.published === "boolean") {
+      await setRoomPublished(roomName, body.published);
+    }
+    return res.json({
+      room: result.room,
+      snapshot: result.snapshot,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(400).json({ error: message });
   }
 });
 
@@ -995,12 +1111,45 @@ app.get("/api/recommendations/live", async (req, res) => {
     const diversity = clamp01(Number(req.query.diversity ?? 0.2));
     const tasteWeight = clamp01(Number(req.query.tasteWeight ?? 0.25));
     const session = await getActiveSession(req);
+    const queryMode = recommendationModeSchema.safeParse(req.query.mode);
+    const streamMode = queryMode.success
+      ? queryMode.data
+      : (session.streamModePreference ?? "live");
+
+    if (streamMode === "batch") {
+      session.streamModePreference = "batch";
+      const tasteOnly = buildTasteOnlyRecommendations(session, Math.max(1, k));
+      return res.json({
+        streamMode: "batch",
+        nowPlaying: { isPlaying: false },
+        recommendations: tasteOnly?.recommendations ?? [],
+        profile: {
+          hasTasteVector: Boolean(session.tasteVector),
+          dims: session.tasteVector?.length ?? 0,
+          updatedAt: session.tasteUpdatedAt,
+        },
+        modelInsights: buildModelInsights(session),
+        horoscope: tasteOnly?.horoscope,
+        controls: {
+          k: Math.max(1, k),
+          diversity,
+          tasteWeight,
+        },
+        projectionMap: tasteOnly?.projectionMap ?? null,
+        warning: tasteOnly
+          ? "Batch stream mode: showing recommendations from your persisted taste profile."
+          : "Batch stream mode is ready, but your taste profile is still empty. Sync with Spotify.",
+      });
+    }
+
+    session.streamModePreference = "live";
     let nowPlaying;
     try {
       nowPlaying = await fetchNowPlaying(session.tokens.accessToken);
     } catch (error) {
       if (isSpotifyRateLimitError(error)) {
         return res.json({
+          streamMode: "live",
           nowPlaying: { isPlaying: false },
           recommendations: [],
           profile: {
@@ -1023,71 +1172,31 @@ app.get("/api/recommendations/live", async (req, res) => {
     }
 
     if (!nowPlaying.trackId) {
-      if (session.tasteVector?.length) {
-        const tasteTarget: TrackFeatureVector = {
-          trackId: "taste-centroid",
-          name: "Your taste centroid",
-          artist: "Profile-derived",
-          vector: session.tasteVector,
-          source: "cached",
-        };
-
-        const tasteCandidates = recommendNearest(tasteTarget, [...library.values()], Math.max(5, k * 3));
-        const horoscope = topTasteSignals(session.tasteVector)
-          .map((signal) => `You love ${signal}`)
-          .join(". ") + ".";
-        const tasteOnly = tasteCandidates.slice(0, Math.max(1, k)).map((item) => ({
-          trackId: item.trackId,
-          name: item.name,
-          artist: item.artist,
-          artworkUrl: item.artworkUrl,
-          previewUrl: item.previewUrl,
-          similarity: Number(item.similarity.toFixed(4)),
-          distance: Number(item.distance.toFixed(4)),
-          tasteSimilarity: Number(item.similarity.toFixed(4)),
-          blendedScore: Number(item.similarity.toFixed(4)),
-          reasons: explainSimilarity(session.tasteVector ?? [], item.vector),
-        }));
-
-        const selectedIds = new Set(tasteOnly.map((item) => item.trackId));
-        const projectionPoints: ProjectionInput[] = [
-          {
-            id: "taste-centroid",
-            label: "Taste centroid",
-            role: "taste",
-            vector: tasteTarget.vector,
-          },
-          ...tasteCandidates.slice(0, Math.max(12, k * 3)).map((item) => ({
-            id: item.trackId,
-            label: `${item.name} - ${item.artist}`,
-            role: selectedIds.has(item.trackId) ? "selected" as const : "candidate" as const,
-            vector: item.vector,
-            score: item.similarity,
-          })),
-        ];
-        const projectionMap = buildProjectionMap(projectionPoints, "taste-only");
-
+      const tasteOnly = buildTasteOnlyRecommendations(session, Math.max(1, k));
+      if (tasteOnly) {
         return res.json({
+          streamMode: "live",
           nowPlaying,
-          recommendations: tasteOnly,
+          recommendations: tasteOnly.recommendations,
           profile: {
             hasTasteVector: true,
-            dims: session.tasteVector.length,
+            dims: session.tasteVector?.length ?? 0,
             updatedAt: session.tasteUpdatedAt,
           },
           modelInsights: buildModelInsights(session),
-          horoscope,
+          horoscope: tasteOnly.horoscope,
           controls: {
             k: Math.max(1, k),
             diversity,
             tasteWeight,
           },
-          projectionMap,
+          projectionMap: tasteOnly.projectionMap,
           warning: "No active playback detected. Showing taste-only recommendations.",
         });
       }
 
       return res.json({
+        streamMode: "live",
         nowPlaying,
         recommendations: [],
         profile: {
@@ -1175,6 +1284,7 @@ app.get("/api/recommendations/live", async (req, res) => {
     const projectionMap = buildProjectionMap(projectionPoints, "now-playing");
 
     return res.json({
+      streamMode: "live",
       nowPlaying,
       target,
       profile: {

@@ -7,6 +7,7 @@ export type SpotifyTokens = {
 export type SessionRecord = {
   id: string;
   tokens: SpotifyTokens;
+  streamModePreference?: "live" | "batch";
   tasteVector?: number[];
   tasteUpdatedAt?: number;
   bootstrapCompletedAt?: number;
@@ -132,17 +133,34 @@ export type RoomStateSnapshot = {
   participants: RoomParticipantSnapshot[];
   updatedAt: number;
   published?: boolean;
+  liveStreamStartedAt?: number;
+  liveStreamEndedAt?: number;
   lastCompatibility?: CompatibilitySummary;
   lastMutualRecommendations?: MutualRecommendation[];
+};
+
+export type RoomBatchSnapshot = {
+  id: string;
+  roomName: string;
+  createdAt: number;
+  reason: "stream_end" | "manual";
+  participantCount: number;
+  tasteReadyCount: number;
+  compatibility?: CompatibilitySummary;
+  mutualRecommendations?: MutualRecommendation[];
 };
 
 export type RoomEventType =
   | "room_joined"
   | "room_left"
+  | "stream_started"
+  | "stream_ended"
   | "taste_profile_shared"
   | "now_playing_shared"
   | "compatibility_computed"
-  | "mutual_recommendations_computed";
+  | "mutual_recommendations_computed"
+  | "batch_snapshot_created"
+  | "room_resumed";
 
 export type RoomEvent = {
   id: string;

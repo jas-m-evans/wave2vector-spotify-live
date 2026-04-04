@@ -95,6 +95,16 @@
         gap: 12px;
         margin-top: 8px;
       }
+      .mode-switch {
+        margin-top: 12px;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .mode-switch button.active {
+        background: #111111;
+        color: #ffffff;
+      }
       .control-grid label {
         display: block;
         font-size: 0.92rem;
@@ -131,6 +141,21 @@
         border-radius: 0;
         border: 2px solid #111111;
         background: #ffffff;
+        color: #111111;
+      }
+      .room-url {
+        margin-top: 10px;
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        gap: 8px;
+      }
+      .room-url input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px;
+        border-radius: 0;
+        border: 2px solid #111111;
+        background: #f7f7f7;
         color: #111111;
       }
       .status-badge {
@@ -340,6 +365,24 @@
       .room-list-item:last-child {
         border-bottom: none;
       }
+      .history-list {
+        margin-top: 10px;
+        border: 1px dashed #111111;
+        padding: 8px;
+        max-height: 220px;
+        overflow: auto;
+      }
+      .history-item {
+        border-bottom: 1px solid #d8d8d8;
+        padding: 8px 0;
+        font-size: 0.84rem;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+      }
+      .history-item:last-child {
+        border-bottom: none;
+      }
       @keyframes pulseRing {
         0% { opacity: 0.35; }
         50% { opacity: 0.9; }
@@ -353,6 +396,9 @@
           grid-template-columns: 1fr;
         }
         .room-grid {
+          grid-template-columns: 1fr;
+        }
+        .room-url {
           grid-template-columns: 1fr;
         }
         .insight-grid {
@@ -382,6 +428,10 @@
         <button id="login">Connect Spotify</button>
         <button id="refresh">Sync With Spotify</button>
         <button id="poll">Start live polling</button>
+        <div class="mode-switch">
+          <button id="mode-live" class="active">Live Stream Mode</button>
+          <button id="mode-batch">Batch Stream Mode</button>
+        </div>
         <div class="control-grid">
           <label>
             Diversity <span id="diversity-value">0.20</span>
@@ -427,6 +477,11 @@
             <button id="publish-room">Publish Room</button>
           </div>
         </div>
+        <div class="room-url">
+          <input id="room-share-url" readonly value="Join a room to generate a share URL" />
+          <button id="copy-room-url">Copy Invite URL</button>
+          <button id="open-room-url">Open URL</button>
+        </div>
         <button id="recompute-room">Recompute Compatibility</button>
         <div id="room-status" class="status-badge muted">Not connected to a room</div>
         <div id="room-help" class="room-help muted">Create/join a room, then share the same room name with one other person. Compatibility and mutual picks appear when both users are connected and have synced taste profiles.</div>
@@ -438,6 +493,10 @@
           <div id="step-compute" class="step"><span class="dot"></span><span>Step 5: Recompute compatibility</span></div>
         </div>
         <div id="active-rooms" class="active-rooms muted">No published rooms yet.</div>
+        <div>
+          <button id="refresh-history">Refresh Space History</button>
+          <div id="room-history" class="history-list muted">Space history appears after a room has had at least one live session.</div>
+        </div>
         <div id="participant-list" style="margin-top:10px;"></div>
       </section>
 

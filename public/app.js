@@ -12,6 +12,8 @@ const diversityValueEl = document.getElementById("diversity-value");
 const tasteWeightValueEl = document.getElementById("taste-weight-value");
 const loginBtn = document.getElementById("login");
 const refreshBtn = document.getElementById("refresh");
+const modeLiveBtn = document.getElementById("mode-live");
+const modeBatchBtn = document.getElementById("mode-batch");
 const syncStatusEl = document.getElementById("sync-status");
 const syncPercentEl = document.getElementById("sync-percent");
 const syncMeterFillEl = document.getElementById("sync-meter-fill");
@@ -25,7 +27,12 @@ const joinRoomBtn = document.getElementById("join-room");
 const leaveRoomBtn = document.getElementById("leave-room");
 const recomputeRoomBtn = document.getElementById("recompute-room");
 const copyRoomBtn = document.getElementById("copy-room");
+const copyRoomUrlBtn = document.getElementById("copy-room-url");
+const openRoomUrlBtn = document.getElementById("open-room-url");
+const roomShareUrlInput = document.getElementById("room-share-url");
 const publishRoomBtn = document.getElementById("publish-room");
+const refreshHistoryBtn = document.getElementById("refresh-history");
+const roomHistoryEl = document.getElementById("room-history");
 const roomStatusEl = document.getElementById("room-status");
 const roomHelpEl = document.getElementById("room-help");
 const roomStepperEl = document.getElementById("room-stepper");
@@ -46,6 +53,8 @@ let livekitRoom = null;
 let isAuthenticated = false;
 let roomPublished = false;
 let lastRoomParticipants = 0;
+let streamMode = "live";
+let roomHistory = [];
 let localSharedState = {
   tasteProfile: null,
   nowPlayingState: null,
@@ -69,6 +78,12 @@ const featureLabels = [
 
 participantNameInput.value = localStorage.getItem("participantName") ?? "";
 roomNameInput.value = localStorage.getItem("roomName") ?? "";
+setStreamMode(localStorage.getItem("streamMode") ?? "live");
+const roomParam = new URLSearchParams(window.location.search).get("room");
+if (roomParam) {
+  roomNameInput.value = roomParam.trim();
+}
+updateShareUrlInput(roomNameInput.value.trim());
 
 function setDebug(payload) {
   debugEl.textContent = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
@@ -128,6 +143,113 @@ function setRoomHelp(text) {
     return;
   }
   roomHelpEl.textContent = text;
+}
+
+function getShareRoomUrl(roomName) {
+  if (!roomName) {
+    return "";
+  }
+  const url = new URL(window.location.href);
+  url.searchParams.set("room", roomName);
+  return url.toString();
+}
+
+function updateShareUrlInput(roomName) {
+  if (!roomShareUrlInput) {
+    return;
+  }
+  roomShareUrlInput.value = roomName
+    ? getShareRoomUrl(roomName)
+    : "Join a room to generate a share URL";
+}
+
+function setStreamMode(nextMode) {
+  streamMode = nextMode === "batch" ? "batch" : "live";
+  modeLiveBtn?.classList.toggle("active", streamMode === "live");
+  modeBatchBtn?.classList.toggle("active", streamMode === "batch");
+  if (streamMode === "batch") {
+    setSyncStatus("Batch mode active: recommendations come from your persisted taste profile.");
+  } else {
+    setSyncStatus("Live mode active: recommendations blend now-playing with your taste profile.");
+  }
+}
+
+function renderRoomHistory(snapshots) {
+  if (!roomHistoryEl) {
+    return;
+  }
+  roomHistory = snapshots ?? [];
+  if (!roomHistory.length) {
+    roomHistoryEl.innerHTML = `<span class="muted">Space history appears after a room has had at least one live session.</span>`;
+    return;
+  }
+
+  roomHistoryEl.innerHTML = roomHistory
+    .map((item) => {
+      const date = new Date(item.createdAt).toLocaleString();
+      const score = item.compatibility?.score?.overallScore;
+      const scoreLabel = typeof score === "number" ? `${score}/100` : "n/a";
+      return `
+        <div class="history-item">
+          <div>
+            <strong>${item.roomName}</strong> <span class="muted">${item.reason}</span><br />
+            <span class="muted">${date} | score: ${scoreLabel} | participants: ${item.participantCount} | taste-ready: ${item.tasteReadyCount}</span>
+          </div>
+          <div>
+            <button type="button" data-resume-id="${item.id}">Resume Space</button>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+
+  roomHistoryEl.querySelectorAll("button[data-resume-id]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const snapshotId = button.getAttribute("data-resume-id");
+      const roomName = (activeRoomName || roomNameInput.value.trim() || localStorage.getItem("roomName") || "").trim();
+      if (!roomName || !snapshotId) {
+        setRoomStatus("Pick or join a room first.");
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/resume`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ snapshotId, published: true }),
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error ?? "Failed to resume room snapshot");
+        }
+        roomPublished = Boolean(payload.room?.published);
+        setPublishButtonLabel();
+        setRoomStatus(`Resumed room space from snapshot ${snapshotId.slice(0, 8)}...`, true);
+        await refreshRoomPanels();
+      } catch (error) {
+        setRoomStatus(error instanceof Error ? error.message : String(error));
+      }
+    });
+  });
+}
+
+async function loadRoomHistory() {
+  const roomName = (activeRoomName || roomNameInput.value.trim()).trim();
+  if (!roomName) {
+    renderRoomHistory([]);
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/history?limit=20`);
+    const payload = await response.json();
+    if (!response.ok) {
+      return;
+    }
+    renderRoomHistory(payload.snapshots ?? []);
+  } catch {
+    // History is optional and should not break room flow.
+  }
 }
 
 function setRoomStepperState() {
@@ -586,6 +708,7 @@ async function refresh() {
     k: String(Math.max(1, Number(kInput.value || 5))),
     diversity: String(Number(diversityInput.value || 0.2)),
     tasteWeight: String(Number(tasteWeightInput.value || 0.25)),
+    mode: streamMode,
   });
 
   const response = await fetch(`/api/recommendations/live?${params.toString()}`);
@@ -593,7 +716,8 @@ async function refresh() {
   setDebug(payload);
 
   if (payload.warning) {
-    setSyncStatus(payload.warning);
+    const modeLabel = payload.streamMode === "batch" ? "Batch" : "Live";
+    setSyncStatus(`${modeLabel}: ${payload.warning}`);
   }
 
   if (!response.ok) {
@@ -721,6 +845,7 @@ async function refreshRoomPanels() {
     renderParticipants(null);
     renderCompatibility(null);
     renderMutualRecommendations([]);
+    await loadRoomHistory();
     return;
   }
 
@@ -737,6 +862,7 @@ async function refreshRoomPanels() {
   renderParticipants(roomPayload.room);
   renderCompatibility(compatibilityPayload);
   renderMutualRecommendations(mutualPayload.recommendations ?? []);
+  await loadRoomHistory();
 }
 
 async function publishDataMessage(message) {
@@ -792,6 +918,7 @@ async function joinRoom() {
 
   localStorage.setItem("roomName", roomName);
   localStorage.setItem("participantName", participantName);
+  updateShareUrlInput(roomName);
 
   const tokenRes = await fetch("/api/livekit/token", {
     method: "POST",
@@ -820,6 +947,7 @@ async function joinRoom() {
 
   activeRoomName = tokenPayload.roomName;
   activeParticipantName = tokenPayload.participantName;
+  updateShareUrlInput(activeRoomName);
   setRoomStatus(`Connected to room ${activeRoomName} as ${activeParticipantName}`, true);
   setRoomStepperState();
 
@@ -844,6 +972,7 @@ async function leaveRoom() {
   activeParticipantName = "";
   roomPublished = false;
   lastRoomParticipants = 0;
+  updateShareUrlInput(roomNameInput.value.trim());
   setPublishButtonLabel();
   localSharedState = { tasteProfile: null, nowPlayingState: null };
   setRoomStatus("Not connected to a room", false);
@@ -861,6 +990,27 @@ refreshBtn.addEventListener("click", () => {
   bootstrapSync(true)
     .then(() => refresh())
     .catch((error) => showFriendlyError("Refresh failed", String(error)));
+});
+
+modeLiveBtn?.addEventListener("click", () => {
+  setStreamMode("live");
+  localStorage.setItem("streamMode", "live");
+  refresh().catch((error) => setDebug(String(error)));
+});
+
+modeBatchBtn?.addEventListener("click", () => {
+  setStreamMode("batch");
+  localStorage.setItem("streamMode", "batch");
+  refresh().catch((error) => setDebug(String(error)));
+});
+
+roomNameInput.addEventListener("input", () => {
+  const roomName = roomNameInput.value.trim();
+  updateShareUrlInput(roomName);
+  localStorage.setItem("roomName", roomName);
+  loadRoomHistory().catch(() => {
+    // Optional panel refresh.
+  });
 });
 
 diversityInput.addEventListener("input", updateControlLabels);
@@ -907,6 +1057,31 @@ copyRoomBtn?.addEventListener("click", async () => {
   }
 });
 
+copyRoomUrlBtn?.addEventListener("click", async () => {
+  const roomName = (activeRoomName || roomNameInput.value.trim()).trim();
+  if (!roomName) {
+    setRoomStatus("Enter a room name first.");
+    return;
+  }
+  const url = getShareRoomUrl(roomName);
+  try {
+    await navigator.clipboard.writeText(url);
+    setRoomStatus("Invite URL copied.", true);
+  } catch {
+    setRoomStatus("Could not copy invite URL.");
+  }
+});
+
+openRoomUrlBtn?.addEventListener("click", () => {
+  const roomName = (activeRoomName || roomNameInput.value.trim()).trim();
+  if (!roomName) {
+    setRoomStatus("Enter a room name first.");
+    return;
+  }
+  const url = getShareRoomUrl(roomName);
+  window.open(url, "_blank", "noopener,noreferrer");
+});
+
 publishRoomBtn?.addEventListener("click", async () => {
   const roomName = activeRoomName || roomNameInput.value.trim();
   if (!roomName) {
@@ -932,6 +1107,10 @@ publishRoomBtn?.addEventListener("click", async () => {
   } catch (error) {
     setRoomStatus(error instanceof Error ? error.message : String(error));
   }
+});
+
+refreshHistoryBtn?.addEventListener("click", () => {
+  loadRoomHistory().catch((error) => setDebug(String(error)));
 });
 
 pollBtn.addEventListener("click", async () => {
@@ -987,6 +1166,10 @@ refreshRoomPanels().catch((error) => setDebug(String(error)));
 updateControlLabels();
 setPublishButtonLabel();
 setRoomStepperState();
+updateShareUrlInput(roomNameInput.value.trim());
 loadActiveRooms().catch(() => {
   // Active room directory is optional.
+});
+loadRoomHistory().catch(() => {
+  // Room history panel is optional.
 });

@@ -6,6 +6,7 @@ import { Redis } from "@upstash/redis";
 import {
   CompatibilitySummary,
   MutualRecommendation,
+  RoomBatchSnapshot,
   RoomEvent,
   RoomParticipantSnapshot,
   RoomStateSnapshot,
@@ -20,6 +21,7 @@ const roomEventsPath = path.resolve(dataDir, "livekit-events.json");
 const roomStatePath = path.resolve(dataDir, "livekit-room-state.json");
 
 const rooms = new Map<string, RoomStateSnapshot>();
+const roomHistory = new Map<string, RoomBatchSnapshot[]>();
 let loaded = false;
 
 // Detect if running on Vercel with Upstash Redis available
@@ -45,16 +47,28 @@ async function ensureLoaded(): Promise<void> {
     if (redis) {
       const raw = await redis.get("livekit:room-state");
       if (raw && typeof raw === "string") {
-        const parsed = JSON.parse(raw) as { rooms?: RoomStateSnapshot[] };
+        const parsed = JSON.parse(raw) as {
+          rooms?: RoomStateSnapshot[];
+          history?: Record<string, RoomBatchSnapshot[]>;
+        };
         for (const room of parsed.rooms ?? []) {
           rooms.set(room.roomName, room);
+        }
+        for (const [roomName, snapshots] of Object.entries(parsed.history ?? {})) {
+          roomHistory.set(roomName, snapshots ?? []);
         }
       }
     } else {
       const raw = await fs.readFile(roomStatePath, "utf8");
-      const parsed = JSON.parse(raw) as { rooms?: RoomStateSnapshot[] };
+      const parsed = JSON.parse(raw) as {
+        rooms?: RoomStateSnapshot[];
+        history?: Record<string, RoomBatchSnapshot[]>;
+      };
       for (const room of parsed.rooms ?? []) {
         rooms.set(room.roomName, room);
+      }
+      for (const [roomName, snapshots] of Object.entries(parsed.history ?? {})) {
+        roomHistory.set(roomName, snapshots ?? []);
       }
     }
   } catch {
@@ -64,7 +78,11 @@ async function ensureLoaded(): Promise<void> {
 }
 
 async function persistRooms(): Promise<void> {
-  const payload = { updatedAt: new Date().toISOString(), rooms: [...rooms.values()] };
+  const payload = {
+    updatedAt: new Date().toISOString(),
+    rooms: [...rooms.values()],
+    history: Object.fromEntries(roomHistory.entries()),
+  };
   if (redis) {
     await redis.set("livekit:room-state", JSON.stringify(payload));
   } else {
@@ -156,6 +174,30 @@ export async function markParticipantJoined(params: {
   });
 }
 
+export async function startLiveStream(params: {
+  roomName: string;
+  sessionId: string;
+  participantName: string;
+}): Promise<void> {
+  await ensureLoaded();
+  const room = ensureRoom(params.roomName);
+  if (!room.liveStreamStartedAt || room.liveStreamEndedAt) {
+    room.liveStreamStartedAt = Date.now();
+    room.liveStreamEndedAt = undefined;
+  }
+  room.updatedAt = Date.now();
+  await persistRooms();
+
+  await appendEvent({
+    id: crypto.randomUUID(),
+    roomName: params.roomName,
+    sessionId: params.sessionId,
+    participantName: params.participantName,
+    type: "stream_started",
+    timestamp: Date.now(),
+  });
+}
+
 export async function markParticipantLeft(params: {
   roomName: string;
   sessionId: string;
@@ -176,6 +218,25 @@ export async function markParticipantLeft(params: {
     sessionId: params.sessionId,
     participantName: participant?.participantName,
     type: "room_left",
+    timestamp: Date.now(),
+  });
+}
+
+export async function endLiveStream(params: {
+  roomName: string;
+  sessionId: string;
+}): Promise<void> {
+  await ensureLoaded();
+  const room = ensureRoom(params.roomName);
+  room.liveStreamEndedAt = Date.now();
+  room.updatedAt = Date.now();
+
+  await persistRooms();
+  await appendEvent({
+    id: crypto.randomUUID(),
+    roomName: params.roomName,
+    sessionId: params.sessionId,
+    type: "stream_ended",
     timestamp: Date.now(),
   });
 }
@@ -323,4 +384,80 @@ export async function listActiveRooms(limit = 20): Promise<Array<{
     })
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .slice(0, Math.max(1, limit));
+}
+
+export async function recordBatchSnapshot(
+  roomName: string,
+  reason: "stream_end" | "manual" = "manual",
+): Promise<RoomBatchSnapshot> {
+  await ensureLoaded();
+  const room = ensureRoom(roomName);
+  const connected = room.participants.filter((participant) => participant.connected);
+  const tasteReady = connected.filter((participant) => participant.tasteProfile);
+  const snapshot: RoomBatchSnapshot = {
+    id: crypto.randomUUID(),
+    roomName,
+    createdAt: Date.now(),
+    reason,
+    participantCount: connected.length,
+    tasteReadyCount: tasteReady.length,
+    compatibility: room.lastCompatibility,
+    mutualRecommendations: room.lastMutualRecommendations,
+  };
+
+  const existing = roomHistory.get(roomName) ?? [];
+  existing.unshift(snapshot);
+  roomHistory.set(roomName, existing.slice(0, 40));
+  await persistRooms();
+  await appendEvent({
+    id: crypto.randomUUID(),
+    roomName,
+    type: "batch_snapshot_created",
+    timestamp: Date.now(),
+    payload: {
+      snapshotId: snapshot.id,
+      participantCount: snapshot.participantCount,
+      tasteReadyCount: snapshot.tasteReadyCount,
+      reason,
+    },
+  });
+
+  return snapshot;
+}
+
+export async function getRoomBatchHistory(roomName: string, limit = 20): Promise<RoomBatchSnapshot[]> {
+  await ensureLoaded();
+  return (roomHistory.get(roomName) ?? []).slice(0, Math.max(1, limit));
+}
+
+export async function resumeRoomFromBatchSnapshot(
+  roomName: string,
+  snapshotId?: string,
+): Promise<{ room: RoomStateSnapshot; snapshot: RoomBatchSnapshot | null }> {
+  await ensureLoaded();
+  const room = ensureRoom(roomName);
+  const snapshots = roomHistory.get(roomName) ?? [];
+  const snapshot = snapshotId
+    ? snapshots.find((item) => item.id === snapshotId) ?? null
+    : (snapshots[0] ?? null);
+
+  if (snapshot) {
+    room.lastCompatibility = snapshot.compatibility;
+    room.lastMutualRecommendations = snapshot.mutualRecommendations;
+    room.liveStreamStartedAt = Date.now();
+    room.liveStreamEndedAt = undefined;
+    room.updatedAt = Date.now();
+    await persistRooms();
+    await appendEvent({
+      id: crypto.randomUUID(),
+      roomName,
+      type: "room_resumed",
+      timestamp: Date.now(),
+      payload: {
+        snapshotId: snapshot.id,
+      },
+    });
+  }
+
+  return { room, snapshot };
 }
