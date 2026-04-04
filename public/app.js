@@ -47,7 +47,6 @@ const nowCompareEl = document.getElementById("now-playing-compare");
 const authStatusEl = document.getElementById("auth-status-content");
 const accountEmailInput = document.getElementById("account-email");
 const accountPasswordInput = document.getElementById("account-password");
-const accountUsernameInput = document.getElementById("account-username");
 const accountRegisterBtn = document.getElementById("account-register");
 const accountLoginBtn = document.getElementById("account-login");
 const accountLogoutBtn = document.getElementById("account-logout");
@@ -100,6 +99,73 @@ function logEvent(scope, message, details) {
     console.log(line, details);
   } else {
     console.log(line);
+  }
+  
+  // Store in localStorage for persistence across redirects
+  try {
+    const logs = JSON.parse(localStorage.getItem("w2v_debug_logs") || "[]");
+    logs.push({
+      timestamp,
+      scope,
+      message,
+      details: details ? JSON.stringify(details).slice(0, 200) : undefined,
+    });
+    // Keep last 50 logs
+    if (logs.length > 50) {
+      logs.shift();
+    }
+    localStorage.setItem("w2v_debug_logs", JSON.stringify(logs));
+  } catch (e) {
+    // localStorage may be unavailable, just skip
+  }
+}
+
+function showDebugLogs() {
+  try {
+    const logs = JSON.parse(localStorage.getItem("w2v_debug_logs") || "[]");
+    if (!logs.length) {
+      console.log("No debug logs stored");
+      return;
+    }
+    console.log("=== DEBUG LOGS (PERSISTED ACROSS REDIRECTS) ===");
+    logs.forEach((log) => {
+      const msg = `[${log.timestamp}] [${log.scope}] ${log.message}`;
+      if (log.details) {
+        console.log(msg, "→", log.details);
+      } else {
+        console.log(msg);
+      }
+    });
+    console.log("=== END DEBUG LOGS ===");
+  } catch (e) {
+    console.error("Could not read debug logs", e);
+  }
+}
+
+function clearDebugLogs() {
+  localStorage.removeItem("w2v_debug_logs");
+  console.log("Debug logs cleared");
+}
+
+async function reportDebugLogs() {
+  try {
+    const logs = JSON.parse(localStorage.getItem("w2v_debug_logs") || "[]");
+    if (!logs.length) {
+      console.log("No debug logs to report");
+      return;
+    }
+    const response = await fetch("/api/debug/logs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ logs, timestamp: new Date().toISOString() }),
+    });
+    if (response.ok) {
+      console.log("Debug logs reported to server");
+    } else {
+      console.log("Could not report debug logs:", response.status);
+    }
+  } catch (e) {
+    console.error("Failed to report debug logs:", e);
   }
 }
 
@@ -1391,14 +1457,12 @@ accountRegisterBtn?.addEventListener("click", async () => {
       accountStatusEl.textContent = "You are already logged in. Log out first to create another account.";
       return;
     }
-    const username = (accountUsernameInput?.value ?? "").trim();
     const response = await fetch("/api/account/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         email: accountEmailInput?.value ?? "",
         password: accountPasswordInput?.value ?? "",
-        username: username || undefined,
       }),
     });
     const payload = await response.json();
@@ -1498,6 +1562,23 @@ recEl.addEventListener("mouseout", (event) => {
 });
 
 logEvent("init", "Page fully loaded, running initialization sequence");
+
+// Show any persisted logs from OAuth redirect
+try {
+  const logs = JSON.parse(localStorage.getItem("w2v_debug_logs") || "[]");
+  if (logs.length > 0) {
+    console.log("=== PERSISTED DEBUG LOGS (from previous OAuth flow) ===");
+    logs.forEach((log) => {
+      console.log(`[${log.scope}] ${log.message}${log.details ? " → " + log.details : ""}`);
+    });
+    console.log("=== END PERSISTED LOGS ===");
+    // Send these logs to the server for analysis
+    reportDebugLogs().catch((e) => console.error("Failed to report logs:", e));
+  }
+} catch (e) {
+  // Ignore
+}
+
 checkAuth().catch((error) => {
   logEvent("init", "App init failed", error);
   showFriendlyError("Failed to initialize app", String(error));

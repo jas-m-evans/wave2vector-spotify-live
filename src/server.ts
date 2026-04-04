@@ -146,9 +146,7 @@ const appAccountAuthSchema = z.object({
   password: z.string().min(8).max(128),
 });
 
-const appAccountRegisterSchema = appAccountAuthSchema.extend({
-  username: z.string().trim().min(2).max(32).optional(),
-});
+const appAccountRegisterSchema = appAccountAuthSchema;
 
 function extractSessionId(req: express.Request): string | null {
   const sid = req.cookies.sid as string | undefined;
@@ -781,7 +779,7 @@ app.post("/api/account/register", async (req, res) => {
     const body = appAccountRegisterSchema.parse(req.body ?? {});
     let account: AppAccount | null = null;
     try {
-      account = await createAccount(body.email, body.password, body.username);
+      account = await createAccount(body.email, body.password);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Account creation failed";
       return res.status(409).json({ error: message });
@@ -849,6 +847,33 @@ app.get("/api/account/me", async (req, res) => {
   // eslint-disable-next-line no-console
   console.log(`[account] Active account found: email=${account.email}, id=${account.id}`);
   return res.json({ authenticated: true, account: toAccountPublic(account) });
+});
+
+app.post("/api/debug/logs", (req, res) => {
+  try {
+    const body = req.body as unknown;
+    if (
+      body &&
+      typeof body === "object" &&
+      "logs" in body &&
+      Array.isArray((body as { logs: unknown }).logs)
+    ) {
+      const logs = (body as { logs: unknown[] }).logs;
+      // eslint-disable-next-line no-console
+      console.log("=== CLIENT DEBUG LOGS RECEIVED ===");
+      logs.forEach((log) => {
+        if (log && typeof log === "object" && "scope" in log && "message" in log) {
+          const l = log as { scope: unknown; message: unknown; details: unknown };
+          console.log(`[${l.scope}] ${l.message}${l.details ? ` → ${l.details}` : ""}`);
+        }
+      });
+      // eslint-disable-next-line no-console
+      console.log("=== END CLIENT DEBUG LOGS ===");
+    }
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(400).json({ error: "Invalid debug log format" });
+  }
 });
 
 app.get("/auth/spotify/login", (req, res) => {
