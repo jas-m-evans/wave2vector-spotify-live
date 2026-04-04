@@ -773,6 +773,10 @@ app.get("/health", (_req, res) => {
 
 app.post("/api/account/register", async (req, res) => {
   try {
+    const active = await getActiveAccount(req);
+    if (active) {
+      return res.status(409).json({ error: "You are already logged in. Log out before creating another account." });
+    }
     const body = appAccountRegisterSchema.parse(req.body ?? {});
     const account = await createAccount(body.email, body.password, body.username);
     res.cookie("aid", account.id, {
@@ -834,6 +838,8 @@ app.get("/auth/spotify/login", (req, res) => {
     httpOnly: true,
     sameSite: "lax",
     secure: cookieSecure,
+    path: "/",
+    maxAge: 1000 * 60 * 60 * 24 * 7,
   });
   res.redirect(spotifyLoginUrl(state));
 });

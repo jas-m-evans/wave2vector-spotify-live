@@ -119,6 +119,9 @@ function setFeatureGate(locked) {
     element.classList.toggle("hidden", locked);
   });
   accountGateEl?.classList.toggle("hidden", !locked);
+  if (lobbyViewBtn) {
+    lobbyViewBtn.classList.toggle("hidden", locked);
+  }
   if (locked) {
     setActiveScreen("home");
   }
@@ -1162,9 +1165,16 @@ async function leaveRoom() {
 }
 
 loginBtn.addEventListener("click", () => {
+  if (!currentAccount) {
+    setSyncStatus("Register or log in to continue.");
+    return;
+  }
   logEvent("auth", "Redirecting to Spotify OAuth");
   setSyncStatus("Redirecting to Spotify authorization...");
+  resetSyncLog();
   appendSyncLog("Redirecting to Spotify OAuth.");
+  setSyncPhaseState("auth");
+  setSyncProgress(5);
   window.location.href = "/auth/spotify/login";
 });
 
@@ -1363,6 +1373,10 @@ refreshHistoryBtn?.addEventListener("click", () => {
 
 accountRegisterBtn?.addEventListener("click", async () => {
   try {
+    if (currentAccount) {
+      accountStatusEl.textContent = "You are already logged in. Log out first to create another account.";
+      return;
+    }
     const username = (accountUsernameInput?.value ?? "").trim();
     const response = await fetch("/api/account/register", {
       method: "POST",
@@ -1378,7 +1392,9 @@ accountRegisterBtn?.addEventListener("click", async () => {
       throw new Error(payload.error ?? "Could not create account");
     }
     renderAccountStatus({ authenticated: true, account: payload.account });
-    setSyncStatus("Account created. Connect Spotify once to build your cached profile.");
+    setSyncStatus("Account created. Connect Spotify to begin authentication, then sync will run with live progress.");
+    resetSyncLog();
+    appendSyncLog("Account created. Waiting for Spotify connect.");
     accountPasswordInput.value = "";
   } catch (error) {
     accountStatusEl.textContent = error instanceof Error ? error.message : String(error);
@@ -1400,7 +1416,8 @@ accountLoginBtn?.addEventListener("click", async () => {
       throw new Error(payload.error ?? "Could not login");
     }
     renderAccountStatus({ authenticated: true, account: payload.account });
-    setSyncStatus("Logged in. Connect Spotify once to build or refresh your profile cache.");
+    setSyncStatus("Logged in. Connect Spotify to authenticate, then sync progress will appear here.");
+    appendSyncLog("Logged in successfully.");
     accountPasswordInput.value = "";
     await refresh();
   } catch (error) {
