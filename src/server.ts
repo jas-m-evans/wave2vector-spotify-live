@@ -332,7 +332,11 @@ async function refreshTasteProfile(session: SessionRecord): Promise<{ sampled: n
   }
 
   const centroid = averageVectors(vectors);
-  session.tasteVector = centroid;
+  const libraryFallback = !centroid && library.size
+    ? averageVectors([...library.values()].slice(0, 50).map((track) => track.vector))
+    : undefined;
+
+  session.tasteVector = centroid ?? libraryFallback;
   session.tasteUpdatedAt = Date.now();
   sessions.set(session.id, session);
 
@@ -755,6 +759,46 @@ app.get("/api/recommendations/live", async (req, res) => {
     }
 
     if (!nowPlaying.trackId) {
+      if (session.tasteVector?.length) {
+        const tasteTarget: TrackFeatureVector = {
+          trackId: "taste-centroid",
+          name: "Your taste centroid",
+          artist: "Profile-derived",
+          vector: session.tasteVector,
+          source: "cached",
+        };
+
+        const tasteCandidates = recommendNearest(tasteTarget, [...library.values()], Math.max(5, k * 3));
+        const tasteOnly = tasteCandidates.slice(0, Math.max(1, k)).map((item) => ({
+          trackId: item.trackId,
+          name: item.name,
+          artist: item.artist,
+          artworkUrl: item.artworkUrl,
+          previewUrl: item.previewUrl,
+          similarity: Number(item.similarity.toFixed(4)),
+          distance: Number(item.distance.toFixed(4)),
+          tasteSimilarity: Number(item.similarity.toFixed(4)),
+          blendedScore: Number(item.similarity.toFixed(4)),
+          reasons: explainSimilarity(session.tasteVector ?? [], item.vector),
+        }));
+
+        return res.json({
+          nowPlaying,
+          recommendations: tasteOnly,
+          profile: {
+            hasTasteVector: true,
+            dims: session.tasteVector.length,
+            updatedAt: session.tasteUpdatedAt,
+          },
+          controls: {
+            k: Math.max(1, k),
+            diversity,
+            tasteWeight,
+          },
+          warning: "No active playback detected. Showing taste-only recommendations.",
+        });
+      }
+
       return res.json({
         nowPlaying,
         recommendations: [],

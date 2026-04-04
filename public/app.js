@@ -124,7 +124,7 @@ function renderNowPlaying(now) {
 
 function renderRecommendations(items) {
   if (!items?.length) {
-    recEl.innerHTML = `<p class="muted">No recommendations yet. Seed library and refresh taste profile first.</p>`;
+    recEl.innerHTML = `<p class="muted">No recommendations yet. Sync with Spotify to hydrate your taste profile.</p>`;
     return;
   }
 
@@ -149,7 +149,7 @@ function renderRecommendations(items) {
 
 function renderProfile(profile) {
   if (!profile || !profile.hasTasteVector) {
-    profileEl.innerHTML = `<p class="muted">No taste profile yet. Click Sync With Spotify to pull your top tracks.</p>`;
+    profileEl.innerHTML = `<p class="muted">Still building your taste profile. Click Sync With Spotify and wait a few seconds.</p>`;
     return;
   }
 
@@ -303,7 +303,7 @@ async function checkAuth() {
     if (!profile.authenticated) {
       nowEl.innerHTML = `<p class="muted">Connect Spotify to get started.</p>`;
       recEl.innerHTML = `<p class="muted">Recommendations appear after connecting Spotify.</p>`;
-      profileEl.innerHTML = `<p class="muted">No taste profile yet. Connect Spotify first.</p>`;
+      profileEl.innerHTML = `<p class="muted">Connect Spotify first, then we'll auto-sync your taste profile.</p>`;
       setSyncStatus("Not connected to Spotify.");
       return;
     }
