@@ -11,7 +11,6 @@ import {
   getCachedSessionLike,
   loginAccount,
   saveSessionCacheToAccount,
-  upsertGoogleAccount,
 } from "./accountStore.js";
 import { computeCompatibility } from "./compatibility.js";
 import {
@@ -146,6 +145,10 @@ const appAccountAuthSchema = z.object({
   password: z.string().min(8).max(128),
 });
 
+const appAccountRegisterSchema = appAccountAuthSchema.extend({
+  username: z.string().trim().min(2).max(32).optional(),
+});
+
 function extractSessionId(req: express.Request): string | null {
   const sid = req.cookies.sid as string | undefined;
   return sid ?? null;
@@ -159,14 +162,18 @@ function extractAccountId(req: express.Request): string | null {
 function toAccountPublic(account: {
   id: string;
   email: string;
+  username?: string;
   createdAt: number;
   updatedAt: number;
   authProvider?: "password" | "google";
   cache?: unknown;
 }): AppAccountPublic {
+  const displayName = (account.username ?? "").trim() || account.email;
   return {
     id: account.id,
     email: account.email,
+    username: account.username,
+    displayName,
     createdAt: account.createdAt,
     updatedAt: account.updatedAt,
     hasCachedProfile: Boolean(account.cache),
@@ -766,12 +773,14 @@ app.get("/health", (_req, res) => {
 
 app.post("/api/account/register", async (req, res) => {
   try {
-    const body = appAccountAuthSchema.parse(req.body ?? {});
-    const account = await createAccount(body.email, body.password);
+    const body = appAccountRegisterSchema.parse(req.body ?? {});
+    const account = await createAccount(body.email, body.password, body.username);
     res.cookie("aid", account.id, {
       httpOnly: true,
       sameSite: "lax",
       secure: cookieSecure,
+      path: "/",
+      maxAge: 1000 * 60 * 60 * 24 * 30,
     });
     return res.json({ account: toAccountPublic(account) });
   } catch (error) {
@@ -788,6 +797,8 @@ app.post("/api/account/login", async (req, res) => {
       httpOnly: true,
       sameSite: "lax",
       secure: cookieSecure,
+      path: "/",
+      maxAge: 1000 * 60 * 60 * 24 * 30,
     });
     return res.json({ account: toAccountPublic(account) });
   } catch (error) {
@@ -797,7 +808,12 @@ app.post("/api/account/login", async (req, res) => {
 });
 
 app.post("/api/account/logout", (_req, res) => {
-  res.clearCookie("aid");
+  res.clearCookie("aid", {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: cookieSecure,
+    path: "/",
+  });
   return res.json({ ok: true });
 });
 
@@ -807,40 +823,6 @@ app.get("/api/account/me", async (req, res) => {
     return res.json({ authenticated: false });
   }
   return res.json({ authenticated: true, account: toAccountPublic(account) });
-});
-
-app.get("/api/account/google-config", (_req, res) => {
-  const clientId = process.env.GOOGLE_CLIENT_ID ?? "";
-  return res.json({ enabled: Boolean(clientId), clientId });
-});
-
-app.post("/api/account/google-login", async (req, res) => {
-  try {
-    const idToken = z.string().min(20).parse(req.body?.idToken);
-    const tokenInfoRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
-    if (!tokenInfoRes.ok) {
-      throw new Error("Google token verification failed.");
-    }
-    const tokenInfo = await tokenInfoRes.json() as { email?: string; aud?: string };
-    const expectedAud = process.env.GOOGLE_CLIENT_ID;
-    if (!tokenInfo.email) {
-      throw new Error("Google login did not return an email.");
-    }
-    if (expectedAud && tokenInfo.aud !== expectedAud) {
-      throw new Error("Google token audience mismatch.");
-    }
-
-    const account = await upsertGoogleAccount(tokenInfo.email);
-    res.cookie("aid", account.id, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: cookieSecure,
-    });
-    return res.json({ account: toAccountPublic(account) });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return res.status(401).json({ error: message });
-  }
 });
 
 app.get("/auth/spotify/login", (req, res) => {

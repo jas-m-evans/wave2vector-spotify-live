@@ -47,13 +47,13 @@ const nowCompareEl = document.getElementById("now-playing-compare");
 const authStatusEl = document.getElementById("auth-status-content");
 const accountEmailInput = document.getElementById("account-email");
 const accountPasswordInput = document.getElementById("account-password");
+const accountUsernameInput = document.getElementById("account-username");
 const accountRegisterBtn = document.getElementById("account-register");
 const accountLoginBtn = document.getElementById("account-login");
 const accountLogoutBtn = document.getElementById("account-logout");
 const accountStatusEl = document.getElementById("account-status");
-const googleSigninEl = document.getElementById("google-signin");
-const googleSigninStatusEl = document.getElementById("google-signin-status");
 const accountGateEl = document.getElementById("account-gate");
+const globalAccountBannerEl = document.getElementById("global-account-banner");
 const homeViewBtn = document.getElementById("view-home");
 const lobbyViewBtn = document.getElementById("view-lobby");
 const homeScreenEl = document.getElementById("screen-home");
@@ -122,6 +122,20 @@ function setFeatureGate(locked) {
   if (locked) {
     setActiveScreen("home");
   }
+}
+
+function setGlobalAccountBanner(account) {
+  if (!globalAccountBannerEl) {
+    return;
+  }
+  if (!account) {
+    globalAccountBannerEl.textContent = "Register or log in to continue.";
+    globalAccountBannerEl.classList.remove("welcome");
+    return;
+  }
+  const name = (account.displayName || account.username || account.email || "").trim() || "there";
+  globalAccountBannerEl.textContent = `Welcome ${name}`;
+  globalAccountBannerEl.classList.add("welcome");
 }
 
 let toastTimer = null;
@@ -445,13 +459,16 @@ function renderAccountStatus(payload) {
   }
   if (!payload?.authenticated || !payload?.account) {
     currentAccount = null;
-    accountStatusEl.textContent = "Not logged into app account yet.";
+    accountStatusEl.textContent = "Register or log in to continue.";
+    setGlobalAccountBanner(null);
     setFeatureGate(true);
     return;
   }
   currentAccount = payload.account;
   const cached = payload.account.hasCachedProfile ? "cached profile ready" : "no cached profile yet";
-  accountStatusEl.textContent = `${payload.account.email} (${cached})`;
+  const name = payload.account.displayName || payload.account.username || payload.account.email;
+  accountStatusEl.textContent = `Welcome ${name} (${cached})`;
+  setGlobalAccountBanner(payload.account);
   setFeatureGate(false);
 }
 
@@ -464,73 +481,6 @@ async function checkAccountAuth() {
   } catch (error) {
     logEvent("account", "Could not fetch account status", error);
     return { authenticated: false };
-  }
-}
-
-async function handleGoogleCredential(credential) {
-  try {
-    const response = await fetch("/api/account/google-login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ idToken: credential }),
-    });
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload.error ?? "Google login failed");
-    }
-    renderAccountStatus({ authenticated: true, account: payload.account });
-    setSyncStatus("Google sign-in complete. Connect Spotify once to build your profile cache.");
-    if (googleSigninStatusEl) {
-      googleSigninStatusEl.textContent = "Google sign-in complete.";
-    }
-  } catch (error) {
-    accountStatusEl.textContent = error instanceof Error ? error.message : String(error);
-    if (googleSigninStatusEl) {
-      googleSigninStatusEl.textContent = "Google sign-in failed. Try again or use email/password.";
-    }
-  }
-}
-
-async function initGoogleSignin() {
-  try {
-    const response = await fetch("/api/account/google-config");
-    const payload = await response.json();
-    if (!googleSigninEl) {
-      return;
-    }
-
-    if (!payload.enabled || !payload.clientId) {
-      if (googleSigninStatusEl) {
-        googleSigninStatusEl.textContent = "Google sign-in is not configured on this environment yet.";
-      }
-      return;
-    }
-
-    if (!window.google) {
-      if (googleSigninStatusEl) {
-        googleSigninStatusEl.textContent = "Google script did not load. Refresh this page to retry.";
-      }
-      return;
-    }
-
-    window.google.accounts.id.initialize({
-      client_id: payload.clientId,
-      callback: (res) => handleGoogleCredential(res.credential),
-    });
-    window.google.accounts.id.renderButton(googleSigninEl, {
-      theme: "outline",
-      size: "large",
-      text: "continue_with",
-      shape: "rectangular",
-    });
-    if (googleSigninStatusEl) {
-      googleSigninStatusEl.textContent = "Google sign-in is available.";
-    }
-  } catch (error) {
-    logEvent("account", "Google sign-in init failed", error);
-    if (googleSigninStatusEl) {
-      googleSigninStatusEl.textContent = "Google sign-in unavailable right now.";
-    }
   }
 }
 
@@ -1017,6 +967,13 @@ async function checkAuth() {
   try {
     logEvent("auth", "Checking auth state");
     const accountPayload = await checkAccountAuth();
+    if (!accountPayload?.authenticated) {
+      renderAuthStatus({ authenticated: false });
+      setSyncStatus("Register or log in to continue.");
+      setSyncProgress(0);
+      return;
+    }
+
     const res = await fetch("/api/me");
     const profile = await res.json();
     logEvent("auth", `Auth response ${res.status}`, profile);
@@ -1406,12 +1363,14 @@ refreshHistoryBtn?.addEventListener("click", () => {
 
 accountRegisterBtn?.addEventListener("click", async () => {
   try {
+    const username = (accountUsernameInput?.value ?? "").trim();
     const response = await fetch("/api/account/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         email: accountEmailInput?.value ?? "",
         password: accountPasswordInput?.value ?? "",
+        username: username || undefined,
       }),
     });
     const payload = await response.json();
@@ -1420,6 +1379,7 @@ accountRegisterBtn?.addEventListener("click", async () => {
     }
     renderAccountStatus({ authenticated: true, account: payload.account });
     setSyncStatus("Account created. Connect Spotify once to build your cached profile.");
+    accountPasswordInput.value = "";
   } catch (error) {
     accountStatusEl.textContent = error instanceof Error ? error.message : String(error);
   }
@@ -1440,6 +1400,8 @@ accountLoginBtn?.addEventListener("click", async () => {
       throw new Error(payload.error ?? "Could not login");
     }
     renderAccountStatus({ authenticated: true, account: payload.account });
+    setSyncStatus("Logged in. Connect Spotify once to build or refresh your profile cache.");
+    accountPasswordInput.value = "";
     await refresh();
   } catch (error) {
     accountStatusEl.textContent = error instanceof Error ? error.message : String(error);
@@ -1449,6 +1411,7 @@ accountLoginBtn?.addEventListener("click", async () => {
 accountLogoutBtn?.addEventListener("click", async () => {
   await fetch("/api/account/logout", { method: "POST" });
   await checkAccountAuth();
+  setSyncStatus("You are logged out.");
   await refresh().catch((error) => setDebug(String(error)));
 });
 
@@ -1506,12 +1469,6 @@ recEl.addEventListener("mouseout", (event) => {
 checkAuth().catch((error) => {
   logEvent("init", "App init failed", error);
   showFriendlyError("Failed to initialize app", String(error));
-});
-checkAccountAuth().catch((error) => {
-  logEvent("init", "Account check failed", error);
-});
-initGoogleSignin().catch((error) => {
-  logEvent("init", "Google init failed", error);
 });
 
 refreshRoomPanels().catch((error) => setDebug(String(error)));

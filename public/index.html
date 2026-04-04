@@ -363,7 +363,7 @@
       }
       .account-grid {
         display: grid;
-        grid-template-columns: 1.2fr 1fr auto;
+        grid-template-columns: 1fr 1fr 1fr auto;
         gap: 8px;
         align-items: end;
       }
@@ -383,16 +383,16 @@
       .account-actions button {
         margin: 0;
       }
-      .account-google-row {
-        margin-top: 10px;
-        border: 1px dashed #111111;
-        padding: 10px;
-        display: grid;
-        gap: 6px;
-        background: #fafafa;
+      .global-account-banner {
+        margin-bottom: 12px;
+        border: 2px solid #111111;
+        background: #ffffff;
+        padding: 10px 12px;
+        font-size: 0.92rem;
+        font-weight: 700;
       }
-      .account-google-status {
-        font-size: 0.82rem;
+      .global-account-banner.welcome {
+        background: #edf7ee;
       }
       .helper-note {
         border-left: 4px solid #444;
@@ -601,6 +601,7 @@
         <button id="view-home" class="active">Home</button>
         <button id="view-lobby">Lobby</button>
       </div>
+      <div id="global-account-banner" class="global-account-banner">Register or log in to continue.</div>
 
       <div id="screen-home" class="screen active">
         <section class="panel">
@@ -614,16 +615,15 @@
               Password
               <input id="account-password" type="password" placeholder="at least 8 chars" />
             </label>
+            <label>
+              Username (optional)
+              <input id="account-username" type="text" maxlength="32" placeholder="alex" />
+            </label>
             <div class="account-actions">
               <button id="account-register">Create</button>
               <button id="account-login">Log In</button>
               <button id="account-logout">Log Out</button>
             </div>
-          </div>
-          <div class="account-google-row">
-            <strong>Or continue with Google</strong>
-            <div id="google-signin"></div>
-            <div id="google-signin-status" class="account-google-status muted">Loading Google sign-in...</div>
           </div>
           <div id="account-status" class="helper-note muted">Create a free account. We only use this for access and saved profile data.</div>
         </section>
@@ -795,8 +795,6 @@
     </main>
 
     <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
-
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script type="module" src="/app.js"></script>
   </body>
 </html>

@@ -71,6 +71,8 @@ export type SpotifyProfile = {
 export type AppAccountPublic = {
   id: string;
   email: string;
+  username?: string;
+  displayName: string;
   createdAt: number;
   updatedAt: number;
   hasCachedProfile: boolean;

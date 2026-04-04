@@ -23,6 +23,7 @@ type AccountCache = {
 export type AppAccount = {
   id: string;
   email: string;
+  username?: string;
   passwordSalt?: string;
   passwordHash?: string;
   authProvider: "password" | "google";
@@ -37,6 +38,7 @@ type PersistedAccounts = {
 };
 
 const accounts = new Map<string, AppAccount>();
+const accountIdByEmail = new Map<string, string>();
 let loaded = false;
 const useRedis = Boolean(process.env.UPSTASH_REDIS_REST_URL);
 let redis: Redis | null = null;
@@ -56,6 +58,15 @@ function hashPassword(password: string, salt: string): string {
   return crypto.pbkdf2Sync(password, salt, 120_000, 32, "sha256").toString("hex");
 }
 
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function normalizeUsername(username?: string): string | undefined {
+  const value = (username ?? "").trim();
+  return value.length ? value : undefined;
+}
+
 async function ensureLoaded(): Promise<void> {
   if (loaded) {
     return;
@@ -71,7 +82,21 @@ async function ensureLoaded(): Promise<void> {
     }
     const parsed = JSON.parse(serial) as PersistedAccounts;
     for (const account of parsed.accounts ?? []) {
-      accounts.set(account.id, account);
+      const normalized = normalizeEmail(account.email);
+      const existingId = accountIdByEmail.get(normalized);
+      if (!existingId) {
+        const hydrated = { ...account, email: normalized };
+        accounts.set(hydrated.id, hydrated);
+        accountIdByEmail.set(normalized, hydrated.id);
+      } else {
+        const existing = accounts.get(existingId);
+        if (!existing || (account.updatedAt ?? 0) >= (existing.updatedAt ?? 0)) {
+          accounts.delete(existingId);
+          const hydrated = { ...account, email: normalized };
+          accounts.set(hydrated.id, hydrated);
+          accountIdByEmail.set(normalized, hydrated.id);
+        }
+      }
     }
   } catch {
     // no-op
@@ -102,11 +127,10 @@ async function persist(): Promise<void> {
   }
 }
 
-export async function createAccount(email: string, password: string): Promise<AppAccount> {
+export async function createAccount(email: string, password: string, username?: string): Promise<AppAccount> {
   await ensureLoaded();
-  const normalized = email.trim().toLowerCase();
-  const existing = [...accounts.values()].find((account) => account.email === normalized);
-  if (existing) {
+  const normalized = normalizeEmail(email);
+  if (accountIdByEmail.has(normalized)) {
     throw new Error("Account already exists for this email.");
   }
 
@@ -114,6 +138,7 @@ export async function createAccount(email: string, password: string): Promise<Ap
   const account: AppAccount = {
     id: crypto.randomUUID(),
     email: normalized,
+    username: normalizeUsername(username),
     passwordSalt: salt,
     passwordHash: hashPassword(password, salt),
     authProvider: "password",
@@ -121,14 +146,16 @@ export async function createAccount(email: string, password: string): Promise<Ap
     updatedAt: Date.now(),
   };
   accounts.set(account.id, account);
+  accountIdByEmail.set(normalized, account.id);
   await persist();
   return account;
 }
 
 export async function loginAccount(email: string, password: string): Promise<AppAccount> {
   await ensureLoaded();
-  const normalized = email.trim().toLowerCase();
-  const account = [...accounts.values()].find((item) => item.email === normalized);
+  const normalized = normalizeEmail(email);
+  const accountId = accountIdByEmail.get(normalized);
+  const account = accountId ? accounts.get(accountId) : undefined;
   if (!account) {
     throw new Error("Invalid email or password.");
   }
@@ -144,8 +171,9 @@ export async function loginAccount(email: string, password: string): Promise<App
 
 export async function upsertGoogleAccount(email: string): Promise<AppAccount> {
   await ensureLoaded();
-  const normalized = email.trim().toLowerCase();
-  const existing = [...accounts.values()].find((account) => account.email === normalized);
+  const normalized = normalizeEmail(email);
+  const existingId = accountIdByEmail.get(normalized);
+  const existing = existingId ? accounts.get(existingId) : undefined;
   if (existing) {
     existing.authProvider = existing.authProvider ?? "google";
     existing.updatedAt = Date.now();
@@ -162,6 +190,7 @@ export async function upsertGoogleAccount(email: string): Promise<AppAccount> {
     updatedAt: Date.now(),
   };
   accounts.set(account.id, account);
+  accountIdByEmail.set(normalized, account.id);
   await persist();
   return account;
 }
