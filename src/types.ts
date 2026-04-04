@@ -26,7 +26,7 @@ export type TrackFeatureVector = {
   artworkUrl?: string;
   previewUrl?: string;
   vector: number[];
-  source: "spotify" | "cached";
+  source: "spotify" | "cached" | "metadata-fallback";
 };
 
 export type Recommendation = TrackFeatureVector & {

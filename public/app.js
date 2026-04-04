@@ -335,6 +335,11 @@ async function bootstrapSync(force = false) {
     appendSyncLog(`Source errors: ${payload.sourceErrors.join(" | ")}`);
   }
   appendSyncLog(`Vectors cached: ${payload.cached ?? 0}, sampled IDs: ${payload.sampled ?? 0}`);
+  appendSyncLog(`Metadata-fallback vectors: ${payload.metadataFallbackCount ?? 0}`);
+  appendSyncLog(`Vector failures: ${payload.vectorFailureCount ?? 0}`);
+  if (payload.vectorFailureSamples?.length) {
+    appendSyncLog(`Vector failure samples: ${payload.vectorFailureSamples.join(" | ")}`);
+  }
   appendSyncLog(`Taste vector dims: ${payload.dims ?? 0}, fallback used: ${payload.fallbackUsed ? "yes" : "no"}`);
 
   if (payload.skipped) {

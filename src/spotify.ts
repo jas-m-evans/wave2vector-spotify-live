@@ -29,8 +29,10 @@ const audioFeaturesSchema = z.object({
 type TrackPayload = {
   id: string;
   name: string;
+  popularity?: number;
+  explicit?: boolean;
   artists: Array<{ name: string }>;
-  album?: { images?: Array<{ url: string }> };
+  album?: { images?: Array<{ url: string }>; release_date?: string };
   preview_url?: string | null;
   duration_ms?: number;
 };
@@ -258,17 +260,51 @@ export async function fetchSpotifyProfile(accessToken: string): Promise<SpotifyP
 }
 
 export async function fetchTrackVector(trackId: string, accessToken: string): Promise<TrackFeatureVector> {
-  const [trackRes, featuresRes] = await Promise.all([
-    spotifyGet(`/tracks/${trackId}`, accessToken),
-    spotifyGet(`/audio-features/${trackId}`, accessToken),
-  ]);
-
-  if (!trackRes.ok || !featuresRes.ok) {
-    throw new Error(`Track vector fetch failed (${trackRes.status}/${featuresRes.status}).`);
+  const trackRes = await spotifyGet(`/tracks/${trackId}`, accessToken);
+  if (!trackRes.ok) {
+    throw new Error(`Track request failed (${trackRes.status}).`);
   }
 
   const track = (await trackRes.json()) as TrackPayload;
-  const features = audioFeaturesSchema.parse(await featuresRes.json());
+  const featuresRes = await spotifyGet(`/audio-features/${trackId}`, accessToken);
+
+  if (featuresRes.ok) {
+    const features = audioFeaturesSchema.parse(await featuresRes.json());
+    return {
+      trackId: track.id,
+      name: track.name,
+      artist: track.artists.map((a) => a.name).join(", "),
+      artworkUrl: track.album?.images?.[0]?.url,
+      previewUrl: track.preview_url ?? undefined,
+      vector: toFeatureVector(features),
+      source: "spotify",
+    };
+  }
+
+  // Fallback for restricted apps where /audio-features is blocked.
+  const popularity = Math.max(0, Math.min(100, track.popularity ?? 50)) / 100;
+  const durationNorm = Math.max(0, Math.min(1, (track.duration_ms ?? 210000) / 600000));
+  const explicit = track.explicit ? 1 : 0;
+  const year = Number((track.album?.release_date ?? "2000").slice(0, 4));
+  const releaseRecency = Number.isFinite(year)
+    ? Math.max(0, Math.min(1, (year - 1960) / (new Date().getFullYear() - 1960)))
+    : 0.5;
+
+  const metadataVector = [
+    popularity,
+    (popularity * 0.75 + releaseRecency * 0.25),
+    0.5,
+    0.35 + popularity * 0.5,
+    explicit ? 0 : 1,
+    explicit ? 0.6 : 0.2,
+    1 - popularity * 0.6,
+    0.15,
+    0.25,
+    0.45 + popularity * 0.4,
+    0.5,
+    4 / 7,
+    durationNorm,
+  ];
 
   return {
     trackId: track.id,
@@ -276,7 +312,7 @@ export async function fetchTrackVector(trackId: string, accessToken: string): Pr
     artist: track.artists.map((a) => a.name).join(", "),
     artworkUrl: track.album?.images?.[0]?.url,
     previewUrl: track.preview_url ?? undefined,
-    vector: toFeatureVector(features),
-    source: "spotify",
+    vector: metadataVector,
+    source: "metadata-fallback",
   };
 }

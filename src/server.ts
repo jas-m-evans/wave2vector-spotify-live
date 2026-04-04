@@ -273,6 +273,9 @@ async function refreshTasteProfile(session: SessionRecord): Promise<{
   sourceCounts: Record<string, number>;
   sourceErrors: string[];
   fallbackUsed: boolean;
+  metadataFallbackCount: number;
+  vectorFailureCount: number;
+  vectorFailureSamples: string[];
 }> {
   const mergedTopIds: string[] = [];
   const seen = new Set<string>();
@@ -341,12 +344,22 @@ async function refreshTasteProfile(session: SessionRecord): Promise<{
 
   const topIds = mergedTopIds.slice(0, 40);
   const vectors: number[][] = [];
+  let metadataFallbackCount = 0;
+  let vectorFailureCount = 0;
+  const vectorFailureSamples: string[] = [];
 
   for (const trackId of topIds) {
     try {
       const vector = await cacheTrack(trackId, session.tokens);
       vectors.push(vector.vector);
-    } catch {
+      if (vector.source === "metadata-fallback") {
+        metadataFallbackCount += 1;
+      }
+    } catch (error) {
+      vectorFailureCount += 1;
+      if (vectorFailureSamples.length < 6) {
+        vectorFailureSamples.push(`${trackId}: ${error instanceof Error ? error.message : String(error)}`);
+      }
       // Skip unavailable tracks in local market.
     }
   }
@@ -367,6 +380,9 @@ async function refreshTasteProfile(session: SessionRecord): Promise<{
     sourceCounts,
     sourceErrors,
     fallbackUsed,
+    metadataFallbackCount,
+    vectorFailureCount,
+    vectorFailureSamples,
   };
 }
 
@@ -556,6 +572,9 @@ app.post("/api/sync/bootstrap", async (req, res) => {
       sourceCounts: result.sourceCounts,
       sourceErrors: result.sourceErrors,
       fallbackUsed: result.fallbackUsed,
+      metadataFallbackCount: result.metadataFallbackCount,
+      vectorFailureCount: result.vectorFailureCount,
+      vectorFailureSamples: result.vectorFailureSamples,
       hasTasteVector: Boolean(session.tasteVector),
       dims: session.tasteVector?.length ?? 0,
       updatedAt: session.tasteUpdatedAt,
