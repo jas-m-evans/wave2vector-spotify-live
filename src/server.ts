@@ -835,16 +835,29 @@ app.post("/api/account/logout", (_req, res) => {
 });
 
 app.get("/api/account/me", async (req, res) => {
+  const aid = extractAccountId(req);
+  // eslint-disable-next-line no-console
+  console.log(`[account] /api/account/me: aid=${aid ?? "none"}`);
+  
   const account = await getActiveAccount(req);
   if (!account) {
+    // eslint-disable-next-line no-console
+    console.log(`[account] No active account found for aid=${aid ?? "none"}`);
     return res.json({ authenticated: false });
   }
+  
+  // eslint-disable-next-line no-console
+  console.log(`[account] Active account found: email=${account.email}, id=${account.id}`);
   return res.json({ authenticated: true, account: toAccountPublic(account) });
 });
 
 app.get("/auth/spotify/login", (req, res) => {
   const sid = extractSessionId(req) ?? createSessionId();
   const state = createStateToken();
+  const aid = extractAccountId(req);
+
+  // eslint-disable-next-line no-console
+  console.log(`[oauth] /auth/spotify/login: sid=${sid}, aid=${aid ?? "none"}, state=${state}`);
 
   stateToSession.set(state, sid);
   res.cookie("sid", sid, {
@@ -854,6 +867,8 @@ app.get("/auth/spotify/login", (req, res) => {
     path: "/",
     maxAge: 1000 * 60 * 60 * 24 * 7,
   });
+  // eslint-disable-next-line no-console
+  console.log(`[oauth] Redirecting to Spotify with state=${state}`);
   res.redirect(spotifyLoginUrl(state));
 });
 
@@ -861,6 +876,9 @@ app.get("/auth/spotify/callback", async (req, res) => {
   try {
     const code = req.query.code as string | undefined;
     const state = req.query.state as string | undefined;
+    // eslint-disable-next-line no-console
+    console.log(`[oauth] Callback received: state=${state}, code=${code ? "yes" : "no"}`);
+
     if (!code || !state) {
       return res.status(400).send("Missing Spotify callback code or state.");
     }
@@ -869,17 +887,42 @@ app.get("/auth/spotify/callback", async (req, res) => {
     const expectedSid = stateToSession.get(state);
     stateToSession.delete(state);
 
+    // eslint-disable-next-line no-console
+    console.log(`[oauth] State validation: sid=${sid ?? "none"}, expectedSid=${expectedSid ?? "none"}, match=${sid === expectedSid}`);
+
     if (!sid || !expectedSid || sid !== expectedSid) {
       return res.status(400).send("State validation failed.");
     }
 
-    const tokens = await exchangeCodeForToken(code);
+    let tokens;
+    try {
+      tokens = await exchangeCodeForToken(code);
+      // eslint-disable-next-line no-console
+      console.log(`[oauth] Token exchange successful, creating session sid=${sid}`);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      // eslint-disable-next-line no-console
+      console.error(`[oauth] Token exchange failed: ${msg}`);
+      throw error;
+    }
+
     const session: SessionRecord = { id: sid, tokens };
     sessions.set(sid, session);
     const aid = extractAccountId(req);
+
+    // eslint-disable-next-line no-console
+    console.log(`[oauth] Session stored: sid=${sid}, aid=${aid ?? "none"}`);
+
     if (aid) {
-      const profile = await fetchSpotifyProfile(tokens.accessToken).catch(() => undefined);
-      await saveSessionCacheToAccount(aid, session, profile);
+      try {
+        const profile = await fetchSpotifyProfile(tokens.accessToken).catch(() => undefined);
+        await saveSessionCacheToAccount(aid, session, profile);
+        // eslint-disable-next-line no-console
+        console.log(`[oauth] Cached Spotify profile to account ${aid}`);
+      } catch (cacheError) {
+        // eslint-disable-next-line no-console
+        console.error(`[oauth] Could not cache profile: ${cacheError instanceof Error ? cacheError.message : String(cacheError)}`);
+      }
       res.cookie("aid", aid, {
         httpOnly: true,
         sameSite: "lax",
@@ -887,11 +930,20 @@ app.get("/auth/spotify/callback", async (req, res) => {
         path: "/",
         maxAge: 1000 * 60 * 60 * 24 * 30,
       });
+      // eslint-disable-next-line no-console
+      console.log(`[oauth] aid cookie set for ${aid}`);
+    } else {
+      // eslint-disable-next-line no-console
+      console.log(`[oauth] No aid cookie found, continuing with Spotify session only`);
     }
 
+    // eslint-disable-next-line no-console
+    console.log(`[oauth] Callback complete, redirecting to /`);
     return res.redirect("/");
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
+    // eslint-disable-next-line no-console
+    console.error(`[oauth] Callback error: ${message}`);
     return res.status(500).send(`Spotify auth failed: ${message}`);
   }
 });

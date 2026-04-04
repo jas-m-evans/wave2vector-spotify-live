@@ -477,8 +477,10 @@ function renderAccountStatus(payload) {
 
 async function checkAccountAuth() {
   try {
+    logEvent("account", "Checking app account auth");
     const response = await fetch("/api/account/me");
     const payload = await response.json();
+    logEvent("account", `Account auth response ${response.status}`, payload);
     renderAccountStatus(payload);
     return payload;
   } catch (error) {
@@ -970,19 +972,24 @@ async function checkAuth() {
   try {
     logEvent("auth", "Checking auth state");
     const accountPayload = await checkAccountAuth();
+    logEvent("auth", `Account auth payload: authenticated=${accountPayload?.authenticated}`, accountPayload);
+    
     if (!accountPayload?.authenticated) {
+      logEvent("auth", "User not logged into app account, rendering unauthenticated state");
       renderAuthStatus({ authenticated: false });
       setSyncStatus("Register or log in to continue.");
       setSyncProgress(0);
       return;
     }
 
+    logEvent("auth", `User logged into app account: ${accountPayload.account?.email}`);
     const res = await fetch("/api/me");
     const profile = await res.json();
-    logEvent("auth", `Auth response ${res.status}`, profile);
+    logEvent("auth", `Spotify auth response ${res.status}`, profile);
     renderAuthStatus(profile);
 
     if (!profile.authenticated) {
+      logEvent("auth", "Spotify not connected, using cached profile");
       recEl.innerHTML = `<p class="muted">Loading your saved profile recommendations...</p>`;
       profileEl.innerHTML = `<p class="muted">Spotify disconnected. Using your cached account profile if available.</p>`;
       setSyncStatus("Spotify not connected. Batch cache mode active when available.");
@@ -992,15 +999,19 @@ async function checkAuth() {
       return;
     }
 
+    logEvent("auth", "Spotify connected, checking for cached profile");
     if (accountPayload?.account?.hasCachedProfile) {
       appendSyncLog("Using cached account profile. Skipping auto-bootstrap.");
+      logEvent("auth", "Using cached profile, skipping bootstrap");
       await refresh();
       return;
     }
 
+    logEvent("auth", "No cached profile, starting bootstrap sync");
     const bootstrap = await bootstrapSync(false);
     if (!bootstrap?.hasTasteVector) {
       appendSyncLog("Initial sync returned no taste vector. Triggering one forced retry.");
+      logEvent("auth", "Bootstrap returned no taste vector, retrying with force=true");
       await bootstrapSync(true);
     }
     await refresh();
@@ -1167,14 +1178,17 @@ async function leaveRoom() {
 loginBtn.addEventListener("click", () => {
   if (!currentAccount) {
     setSyncStatus("Register or log in to continue.");
+    logEvent("auth", "Connect Spotify blocked: no app account logged in");
     return;
   }
-  logEvent("auth", "Redirecting to Spotify OAuth");
+  logEvent("auth", "Connect Spotify button clicked");
+  logEvent("auth", `Current account: ${currentAccount.email}, id=${currentAccount.id}`);
   setSyncStatus("Redirecting to Spotify authorization...");
   resetSyncLog();
-  appendSyncLog("Redirecting to Spotify OAuth.");
+  appendSyncLog("Initiating Spotify OAuth flow.");
   setSyncPhaseState("auth");
   setSyncProgress(5);
+  logEvent("auth", `Redirecting to /auth/spotify/login for account ${currentAccount.email}`);
   window.location.href = "/auth/spotify/login";
 });
 
@@ -1483,6 +1497,7 @@ recEl.addEventListener("mouseout", (event) => {
   }
 });
 
+logEvent("init", "Page fully loaded, running initialization sequence");
 checkAuth().catch((error) => {
   logEvent("init", "App init failed", error);
   showFriendlyError("Failed to initialize app", String(error));
