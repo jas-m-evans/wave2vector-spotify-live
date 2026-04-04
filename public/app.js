@@ -13,6 +13,9 @@ const tasteWeightValueEl = document.getElementById("taste-weight-value");
 const loginBtn = document.getElementById("login");
 const refreshBtn = document.getElementById("refresh");
 const syncStatusEl = document.getElementById("sync-status");
+const syncPercentEl = document.getElementById("sync-percent");
+const syncMeterFillEl = document.getElementById("sync-meter-fill");
+const syncLogEl = document.getElementById("sync-log");
 
 const roomNameInput = document.getElementById("room-name");
 const participantNameInput = document.getElementById("participant-name");
@@ -57,6 +60,33 @@ function setSyncStatus(message) {
   syncStatusEl.textContent = message;
 }
 
+function setSyncProgress(percent) {
+  const safe = Math.max(0, Math.min(100, Math.round(percent)));
+  if (syncPercentEl) {
+    syncPercentEl.textContent = `${safe}%`;
+  }
+  if (syncMeterFillEl) {
+    syncMeterFillEl.style.width = `${safe}%`;
+  }
+}
+
+function appendSyncLog(message) {
+  if (!syncLogEl) {
+    return;
+  }
+  const stamp = new Date().toLocaleTimeString();
+  const previous = syncLogEl.textContent?.trim();
+  syncLogEl.textContent = previous
+    ? `${previous}\n[${stamp}] ${message}`
+    : `[${stamp}] ${message}`;
+}
+
+function resetSyncLog() {
+  if (syncLogEl) {
+    syncLogEl.textContent = "";
+  }
+}
+
 function updateControlLabels() {
   diversityValueEl.textContent = Number(diversityInput.value).toFixed(2);
   tasteWeightValueEl.textContent = Number(tasteWeightInput.value).toFixed(2);
@@ -75,12 +105,7 @@ function renderAuthStatus(profile) {
   if (!profile?.authenticated) {
     authStatusEl.innerHTML = `
       <span class="muted">Not connected to Spotify.</span>
-      <button id="auth-banner-login" style="margin-left:8px;">Connect Spotify</button>
     `;
-    const bannerLogin = document.getElementById("auth-banner-login");
-    bannerLogin?.addEventListener("click", () => {
-      window.location.href = "/auth/spotify/login";
-    });
     return;
   }
 
@@ -269,29 +294,56 @@ async function refresh() {
 }
 
 async function bootstrapSync(force = false) {
+  resetSyncLog();
+  setSyncProgress(0);
+  appendSyncLog(`Bootstrap start (force=${force ? "true" : "false"}).`);
   setSyncStatus(force ? "Syncing with Spotify (manual refresh)..." : "Syncing with Spotify for first-time setup...");
+
+  let progress = 8;
+  setSyncProgress(progress);
+  const timer = setInterval(() => {
+    progress = Math.min(88, progress + 6);
+    setSyncProgress(progress);
+  }, 350);
+
   const response = await fetch("/api/sync/bootstrap", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ force }),
   });
   const payload = await response.json();
+  clearInterval(timer);
+  setSyncProgress(100);
   setDebug(payload);
+  appendSyncLog(`HTTP ${response.status}`);
 
   if (response.status === 429) {
     setSyncStatus("Spotify rate limit reached. Please wait 30 seconds and click Sync again.");
-    return;
+    appendSyncLog("Rate-limited by Spotify (429). No profile update applied.");
+    return payload;
   }
   if (!response.ok) {
     setSyncStatus(payload.error ?? "Sync failed.");
-    return;
+    appendSyncLog(`Sync failed: ${payload.error ?? "unknown error"}`);
+    return payload;
   }
+
+  if (payload.sourceCounts) {
+    appendSyncLog(`Sources: ${JSON.stringify(payload.sourceCounts)}`);
+  }
+  if (payload.sourceErrors?.length) {
+    appendSyncLog(`Source errors: ${payload.sourceErrors.join(" | ")}`);
+  }
+  appendSyncLog(`Vectors cached: ${payload.cached ?? 0}, sampled IDs: ${payload.sampled ?? 0}`);
+  appendSyncLog(`Taste vector dims: ${payload.dims ?? 0}, fallback used: ${payload.fallbackUsed ? "yes" : "no"}`);
 
   if (payload.skipped) {
     setSyncStatus("Spotify already synced. You're good to go.");
   } else {
     setSyncStatus(`Spotify sync complete. Taste vector updated (${payload.dims ?? 0} dims).`);
   }
+
+  return payload;
 }
 
 async function checkAuth() {
@@ -305,10 +357,16 @@ async function checkAuth() {
       recEl.innerHTML = `<p class="muted">Recommendations appear after connecting Spotify.</p>`;
       profileEl.innerHTML = `<p class="muted">Connect Spotify first, then we'll auto-sync your taste profile.</p>`;
       setSyncStatus("Not connected to Spotify.");
+      setSyncProgress(0);
+      appendSyncLog("Waiting for authentication.");
       return;
     }
 
-    await bootstrapSync(false);
+    const bootstrap = await bootstrapSync(false);
+    if (!bootstrap?.hasTasteVector) {
+      appendSyncLog("Initial sync returned no taste vector. Triggering one forced retry.");
+      await bootstrapSync(true);
+    }
     await refresh();
   } catch (error) {
     showFriendlyError("Could not check Spotify auth state.", String(error));
@@ -377,8 +435,16 @@ async function joinRoom() {
   const roomName = roomNameInput.value.trim();
   const participantName = participantNameInput.value.trim() || spotifyDisplayName;
 
+  const tasteReady = profileEl.textContent?.includes("Vector dims");
+
   if (!roomName || !participantName) {
     setRoomStatus("Enter a room name. Display name auto-fills from Spotify, or type one.");
+    return;
+  }
+
+  if (!tasteReady) {
+    setRoomStatus("Taste profile not ready yet. Click Sync With Spotify and wait for 100%.");
+    appendSyncLog("Join blocked: taste profile not ready.");
     return;
   }
 
@@ -440,6 +506,7 @@ async function leaveRoom() {
 
 loginBtn.addEventListener("click", () => {
   setSyncStatus("Redirecting to Spotify authorization...");
+  appendSyncLog("Redirecting to Spotify OAuth.");
   window.location.href = "/auth/spotify/login";
 });
 

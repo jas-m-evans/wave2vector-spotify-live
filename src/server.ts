@@ -267,9 +267,23 @@ function averageVectors(vectors: number[][]): number[] | undefined {
   return sum.map((value) => value / vectors.length);
 }
 
-async function refreshTasteProfile(session: SessionRecord): Promise<{ sampled: number; cached: number }> {
+async function refreshTasteProfile(session: SessionRecord): Promise<{
+  sampled: number;
+  cached: number;
+  sourceCounts: Record<string, number>;
+  sourceErrors: string[];
+  fallbackUsed: boolean;
+}> {
   const mergedTopIds: string[] = [];
   const seen = new Set<string>();
+  const sourceCounts: Record<string, number> = {
+    short_term: 0,
+    medium_term: 0,
+    long_term: 0,
+    saved_tracks: 0,
+    recently_played: 0,
+  };
+  const sourceErrors: string[] = [];
   const windows: Array<"short_term" | "medium_term" | "long_term"> = [
     "short_term",
     "medium_term",
@@ -279,13 +293,15 @@ async function refreshTasteProfile(session: SessionRecord): Promise<{ sampled: n
   for (const window of windows) {
     try {
       const ids = await fetchTopTrackIds(session.tokens.accessToken, 20, window);
+      sourceCounts[window] = ids.length;
       for (const id of ids) {
         if (!seen.has(id)) {
           seen.add(id);
           mergedTopIds.push(id);
         }
       }
-    } catch {
+    } catch (error) {
+      sourceErrors.push(`${window}: ${error instanceof Error ? error.message : String(error)}`);
       // Continue with other sources if one window fails/rate-limits.
     }
   }
@@ -294,13 +310,15 @@ async function refreshTasteProfile(session: SessionRecord): Promise<{ sampled: n
   if (mergedTopIds.length < 12) {
     try {
       const saved = await fetchSavedTrackIds(session.tokens.accessToken, 50);
+      sourceCounts.saved_tracks = saved.length;
       for (const id of saved) {
         if (!seen.has(id)) {
           seen.add(id);
           mergedTopIds.push(id);
         }
       }
-    } catch {
+    } catch (error) {
+      sourceErrors.push(`saved_tracks: ${error instanceof Error ? error.message : String(error)}`);
       // Optional fallback source.
     }
   }
@@ -308,13 +326,15 @@ async function refreshTasteProfile(session: SessionRecord): Promise<{ sampled: n
   if (mergedTopIds.length < 20) {
     try {
       const recent = await fetchRecentlyPlayedTrackIds(session.tokens.accessToken, 50);
+      sourceCounts.recently_played = recent.length;
       for (const id of recent) {
         if (!seen.has(id)) {
           seen.add(id);
           mergedTopIds.push(id);
         }
       }
-    } catch {
+    } catch (error) {
+      sourceErrors.push(`recently_played: ${error instanceof Error ? error.message : String(error)}`);
       // Optional fallback source.
     }
   }
@@ -336,6 +356,7 @@ async function refreshTasteProfile(session: SessionRecord): Promise<{ sampled: n
     ? averageVectors([...library.values()].slice(0, 50).map((track) => track.vector))
     : undefined;
 
+  const fallbackUsed = Boolean(libraryFallback && !centroid);
   session.tasteVector = centroid ?? libraryFallback;
   session.tasteUpdatedAt = Date.now();
   sessions.set(session.id, session);
@@ -343,6 +364,9 @@ async function refreshTasteProfile(session: SessionRecord): Promise<{ sampled: n
   return {
     sampled: topIds.length,
     cached: vectors.length,
+    sourceCounts,
+    sourceErrors,
+    fallbackUsed,
   };
 }
 
@@ -529,6 +553,9 @@ app.post("/api/sync/bootstrap", async (req, res) => {
       seeded: library.size - before,
       sampled: result.sampled,
       cached: result.cached,
+      sourceCounts: result.sourceCounts,
+      sourceErrors: result.sourceErrors,
+      fallbackUsed: result.fallbackUsed,
       hasTasteVector: Boolean(session.tasteVector),
       dims: session.tasteVector?.length ?? 0,
       updatedAt: session.tasteUpdatedAt,
@@ -745,6 +772,7 @@ app.get("/api/recommendations/live", async (req, res) => {
           recommendations: [],
           profile: {
             hasTasteVector: Boolean(session.tasteVector),
+            dims: session.tasteVector?.length ?? 0,
             updatedAt: session.tasteUpdatedAt,
           },
           controls: {
@@ -752,7 +780,9 @@ app.get("/api/recommendations/live", async (req, res) => {
             diversity,
             tasteWeight,
           },
-          warning: "Spotify now-playing is rate-limited right now. Your profile is still saved.",
+          warning: session.tasteVector?.length
+            ? "Spotify now-playing is rate-limited right now. Showing profile-only mode."
+            : "Spotify now-playing is rate-limited right now, and your taste profile is still empty. Use Sync With Spotify again.",
         });
       }
       throw error;

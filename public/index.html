@@ -144,9 +144,9 @@
         background: repeating-linear-gradient(90deg, #111111 0 8px, #f2f2f2 8px 16px);
       }
       .auth-banner {
-        display: flex;
-        align-items: center;
-        gap: 12px;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
         padding: 12px 16px;
       }
       .auth-avatar {
@@ -165,10 +165,36 @@
         vertical-align: middle;
       }
       .sync-status {
-        margin-top: 10px;
         padding: 8px 10px;
         border: 2px dashed #111111;
         font-size: 0.88rem;
+      }
+      .sync-meter {
+        border: 2px solid #111111;
+        background: #ffffff;
+        height: 18px;
+        position: relative;
+      }
+      .sync-meter-fill {
+        height: 100%;
+        width: 0%;
+        background: repeating-linear-gradient(90deg, #2fbf4a 0 6px, #ffffff 6px 12px);
+        transition: width 220ms linear;
+      }
+      .sync-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+      }
+      .sync-log {
+        border: 1px dashed #111111;
+        padding: 8px;
+        font-size: 0.82rem;
+        max-height: 110px;
+        overflow: auto;
+        background: #f8f8f8;
+        white-space: pre-wrap;
       }
       @media (max-width: 760px) {
         .row {
@@ -189,7 +215,12 @@
 
       <div class="panel auth-banner">
         <div id="auth-status-content"><span class="muted">Checking Spotify connection...</span></div>
-        <div id="sync-status" class="sync-status">Waiting for Spotify sync...</div>
+        <div class="sync-row">
+          <div id="sync-status" class="sync-status">Waiting for Spotify sync...</div>
+          <strong id="sync-percent">0%</strong>
+        </div>
+        <div class="sync-meter"><div id="sync-meter-fill" class="sync-meter-fill"></div></div>
+        <div id="sync-log" class="sync-log muted">Sync log will appear here.</div>
       </div>
 
       <div class="panel">
