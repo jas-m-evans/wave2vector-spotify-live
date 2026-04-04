@@ -525,9 +525,16 @@ async function refreshTasteProfile(session: SessionRecord): Promise<{
   const libraryFallback = !centroid && library.size
     ? averageVectors([...library.values()].slice(0, 50).map((track) => track.vector))
     : undefined;
+  const seedFallback = !centroid && !libraryFallback && famousTrackSeeds.length
+    ? averageVectors(
+        [...library.values()]
+          .filter((track) => famousTrackSeeds.includes(track.trackId))
+          .map((track) => track.vector)
+      )
+    : undefined;
 
-  const fallbackUsed = Boolean(libraryFallback && !centroid);
-  session.tasteVector = centroid ?? libraryFallback;
+  const fallbackUsed = Boolean((libraryFallback || seedFallback) && !centroid);
+  session.tasteVector = centroid ?? libraryFallback ?? seedFallback;
   session.tasteUpdatedAt = Date.now();
   session.lastSyncStats = {
     sampled: topIds.length,
@@ -1026,6 +1033,9 @@ app.get("/api/recommendations/live", async (req, res) => {
         };
 
         const tasteCandidates = recommendNearest(tasteTarget, [...library.values()], Math.max(5, k * 3));
+        const horoscope = topTasteSignals(session.tasteVector)
+          .map((signal) => `You love ${signal}`)
+          .join(". ") + ".";
         const tasteOnly = tasteCandidates.slice(0, Math.max(1, k)).map((item) => ({
           trackId: item.trackId,
           name: item.name,
@@ -1066,6 +1076,7 @@ app.get("/api/recommendations/live", async (req, res) => {
             updatedAt: session.tasteUpdatedAt,
           },
           modelInsights: buildModelInsights(session),
+          horoscope,
           controls: {
             k: Math.max(1, k),
             diversity,

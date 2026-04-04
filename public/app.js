@@ -537,6 +537,11 @@ function renderCompatibility(payload) {
     return;
   }
 
+  if (payload.horoscope) {
+    horoscopeEl.innerHTML = `<p>${payload.horoscope}</p>`;
+    return;
+  }
+
   const score = payload?.score?.overallScore ?? 0;
   compatibilityEl.innerHTML = `
     <div class="score-meter"><div class="score-fill" style="width:${score}%;"></div></div>
@@ -608,6 +613,9 @@ async function refresh() {
   renderProfile(payload.profile);
   renderModelInsights(payload.modelInsights);
   renderProjectionMap(payload.projectionMap ?? null);
+  if (payload.horoscope && !activeRoomName) {
+    horoscopeEl.innerHTML = `<p>${payload.horoscope}</p>`;
+  }
 
   if (payload.controls) {
     diversityInput.value = String(payload.controls.diversity);
