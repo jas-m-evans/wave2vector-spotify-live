@@ -23,6 +23,8 @@ import {
   createSessionId,
   createStateToken,
   exchangeCodeForToken,
+  fetchRecentlyPlayedTrackIds,
+  fetchSavedTrackIds,
   fetchSpotifyProfile,
   fetchTopTrackIds,
   fetchNowPlaying,
@@ -275,12 +277,45 @@ async function refreshTasteProfile(session: SessionRecord): Promise<{ sampled: n
   ];
 
   for (const window of windows) {
-    const ids = await fetchTopTrackIds(session.tokens.accessToken, 20, window);
-    for (const id of ids) {
-      if (!seen.has(id)) {
-        seen.add(id);
-        mergedTopIds.push(id);
+    try {
+      const ids = await fetchTopTrackIds(session.tokens.accessToken, 20, window);
+      for (const id of ids) {
+        if (!seen.has(id)) {
+          seen.add(id);
+          mergedTopIds.push(id);
+        }
       }
+    } catch {
+      // Continue with other sources if one window fails/rate-limits.
+    }
+  }
+
+  // Fallback for users with sparse top-tracks history.
+  if (mergedTopIds.length < 12) {
+    try {
+      const saved = await fetchSavedTrackIds(session.tokens.accessToken, 50);
+      for (const id of saved) {
+        if (!seen.has(id)) {
+          seen.add(id);
+          mergedTopIds.push(id);
+        }
+      }
+    } catch {
+      // Optional fallback source.
+    }
+  }
+
+  if (mergedTopIds.length < 20) {
+    try {
+      const recent = await fetchRecentlyPlayedTrackIds(session.tokens.accessToken, 50);
+      for (const id of recent) {
+        if (!seen.has(id)) {
+          seen.add(id);
+          mergedTopIds.push(id);
+        }
+      }
+    } catch {
+      // Optional fallback source.
     }
   }
 

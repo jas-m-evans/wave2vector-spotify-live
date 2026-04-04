@@ -38,6 +38,8 @@ type TrackPayload = {
 const scopes = [
   "user-read-currently-playing",
   "user-read-playback-state",
+  "user-read-recently-played",
+  "user-library-read",
   "user-top-read",
 ].join(" ");
 
@@ -203,6 +205,38 @@ export async function fetchTopTrackIds(
   const payload = (await response.json()) as { items?: Array<{ id?: string }> };
   return (payload.items ?? [])
     .map((item) => item.id)
+    .filter((id): id is string => Boolean(id));
+}
+
+export async function fetchSavedTrackIds(accessToken: string, limit = 50): Promise<string[]> {
+  const capped = Math.max(1, Math.min(50, limit));
+  const response = await spotifyGet(`/me/tracks?limit=${capped}`, accessToken);
+  if (!response.ok) {
+    throw new Error(`Saved tracks request failed (${response.status}).`);
+  }
+
+  const payload = (await response.json()) as {
+    items?: Array<{ track?: { id?: string } }>;
+  };
+
+  return (payload.items ?? [])
+    .map((item) => item.track?.id)
+    .filter((id): id is string => Boolean(id));
+}
+
+export async function fetchRecentlyPlayedTrackIds(accessToken: string, limit = 50): Promise<string[]> {
+  const capped = Math.max(1, Math.min(50, limit));
+  const response = await spotifyGet(`/me/player/recently-played?limit=${capped}`, accessToken);
+  if (!response.ok) {
+    throw new Error(`Recently played request failed (${response.status}).`);
+  }
+
+  const payload = (await response.json()) as {
+    items?: Array<{ track?: { id?: string } }>;
+  };
+
+  return (payload.items ?? [])
+    .map((item) => item.track?.id)
     .filter((id): id is string => Boolean(id));
 }
 

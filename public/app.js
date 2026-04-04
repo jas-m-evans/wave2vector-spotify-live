@@ -220,6 +220,7 @@ function renderMutualRecommendations(items) {
           <span class="muted">${item.artist}</span><br />
           <span class="muted">Joint ${(item.jointScore * 100).toFixed(1)}% | A ${(item.scoreForA * 100).toFixed(1)}% | B ${(item.scoreForB * 100).toFixed(1)}%</span>
           ${item.reasonTags?.length ? `<div class="chip-row">${item.reasonTags.map((reason) => `<span class="chip">${reason}</span>`).join("")}</div>` : ""}
+          <br /><a href="https://open.spotify.com/track/${item.trackId}" target="_blank" rel="noopener noreferrer"><button type="button">Play Together</button></a>
           ${item.previewUrl ? `<br /><audio controls preload="none" src="${item.previewUrl}"></audio>` : ""}
         </div>
       </div>
