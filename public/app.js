@@ -17,13 +17,19 @@ const syncPercentEl = document.getElementById("sync-percent");
 const syncMeterFillEl = document.getElementById("sync-meter-fill");
 const syncLogEl = document.getElementById("sync-log");
 const modelInsightsEl = document.getElementById("model-insights");
+const recommendationMapEl = document.getElementById("recommendation-map");
 
 const roomNameInput = document.getElementById("room-name");
 const participantNameInput = document.getElementById("participant-name");
 const joinRoomBtn = document.getElementById("join-room");
 const leaveRoomBtn = document.getElementById("leave-room");
 const recomputeRoomBtn = document.getElementById("recompute-room");
+const copyRoomBtn = document.getElementById("copy-room");
+const publishRoomBtn = document.getElementById("publish-room");
 const roomStatusEl = document.getElementById("room-status");
+const roomHelpEl = document.getElementById("room-help");
+const roomStepperEl = document.getElementById("room-stepper");
+const activeRoomsEl = document.getElementById("active-rooms");
 const participantListEl = document.getElementById("participant-list");
 const compatibilityEl = document.getElementById("compatibility");
 const horoscopeEl = document.getElementById("horoscope");
@@ -37,6 +43,9 @@ let activeRoomName = "";
 let activeParticipantName = "";
 let spotifyDisplayName = "";
 let livekitRoom = null;
+let isAuthenticated = false;
+let roomPublished = false;
+let lastRoomParticipants = 0;
 let localSharedState = {
   tasteProfile: null,
   nowPlayingState: null,
@@ -114,15 +123,99 @@ function setRoomStatus(text, isActive = false) {
   roomStatusEl.classList.toggle("muted", !isActive);
 }
 
+function setRoomHelp(text) {
+  if (!roomHelpEl) {
+    return;
+  }
+  roomHelpEl.textContent = text;
+}
+
+function setRoomStepperState() {
+  if (!roomStepperEl) {
+    return;
+  }
+
+  const steps = {
+    connect: roomStepperEl.querySelector("#step-connect"),
+    join: roomStepperEl.querySelector("#step-join"),
+    invite: roomStepperEl.querySelector("#step-invite"),
+    wait: roomStepperEl.querySelector("#step-wait"),
+    compute: roomStepperEl.querySelector("#step-compute"),
+  };
+
+  const hasTaste = Boolean(profileEl.textContent?.includes("Vector dims"));
+  const joined = Boolean(activeRoomName);
+  const roomReady = lastRoomParticipants >= 2;
+
+  steps.connect?.classList.toggle("active", isAuthenticated && hasTaste);
+  steps.join?.classList.toggle("active", joined);
+  steps.invite?.classList.toggle("active", joined && roomPublished);
+  steps.wait?.classList.toggle("active", joined && roomReady);
+  steps.compute?.classList.toggle("active", joined && roomReady && hasTaste);
+}
+
+function setPublishButtonLabel() {
+  if (!publishRoomBtn) {
+    return;
+  }
+  publishRoomBtn.textContent = roomPublished ? "Unpublish Room" : "Publish Room";
+}
+
+function renderActiveRooms(rooms) {
+  if (!activeRoomsEl) {
+    return;
+  }
+  if (!rooms?.length) {
+    activeRoomsEl.innerHTML = `<span class="muted">No published rooms yet.</span>`;
+    return;
+  }
+
+  activeRoomsEl.innerHTML = rooms
+    .map((room) => `
+      <div class="room-list-item">
+        <div>
+          <strong>${room.roomName}</strong><br />
+          <span class="muted">connected: ${room.connectedCount} | taste-ready: ${room.tasteReadyCount}</span>
+        </div>
+        <button type="button" data-join-room="${room.roomName}">Join</button>
+      </div>
+    `)
+    .join("");
+
+  activeRoomsEl.querySelectorAll("button[data-join-room]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const roomName = button.getAttribute("data-join-room");
+      if (roomName) {
+        roomNameInput.value = roomName;
+      }
+    });
+  });
+}
+
+async function loadActiveRooms() {
+  try {
+    const response = await fetch("/api/rooms/active?limit=10");
+    const payload = await response.json();
+    if (!response.ok) {
+      return;
+    }
+    renderActiveRooms(payload.rooms ?? []);
+  } catch {
+    // Keep UI resilient if room directory fetch fails.
+  }
+}
+
 function renderAuthStatus(profile) {
   if (!authStatusEl) {
     return;
   }
 
   if (!profile?.authenticated) {
+    isAuthenticated = false;
     authStatusEl.innerHTML = `
       <span class="muted">Not connected to Spotify.</span>
     `;
+    setRoomStepperState();
     return;
   }
 
@@ -139,10 +232,12 @@ function renderAuthStatus(profile) {
     </span>
   `;
 
+  isAuthenticated = true;
   spotifyDisplayName = profile.displayName ?? "";
   if (!participantNameInput.value.trim() || participantNameInput.value.trim().toLowerCase() === "alex") {
     participantNameInput.value = spotifyDisplayName;
   }
+  setRoomStepperState();
 }
 
 function renderNowPlaying(now) {
@@ -167,13 +262,14 @@ function renderNowPlaying(now) {
 function renderRecommendations(items) {
   if (!items?.length) {
     recEl.innerHTML = `<p class="muted">No recommendations yet. Sync with Spotify to hydrate your taste profile.</p>`;
+    clearRecommendationHighlights();
     return;
   }
 
   recEl.innerHTML = items
     .map(
       (item) => `
-      <div class="track" style="margin-bottom:8px;">
+      <div class="track rec-item" data-track-id="${item.trackId}" style="margin-bottom:8px;">
         ${item.artworkUrl ? `<img src="${item.artworkUrl}" alt="art" />` : ""}
         <div>
           <strong>${item.name}</strong><br />
@@ -189,9 +285,27 @@ function renderRecommendations(items) {
     .join("");
 }
 
+function clearRecommendationHighlights() {
+  recEl.querySelectorAll(".rec-item.active").forEach((el) => el.classList.remove("active"));
+  recommendationMapEl?.querySelectorAll(".projection-point.active").forEach((el) => el.classList.remove("active"));
+}
+
+function highlightRecommendation(trackId) {
+  if (!trackId) {
+    return;
+  }
+  clearRecommendationHighlights();
+  const safeId = CSS.escape(trackId);
+  recEl.querySelector(`.rec-item[data-track-id="${safeId}"]`)?.classList.add("active");
+  recommendationMapEl
+    ?.querySelectorAll(`.projection-point[data-track-id="${safeId}"]`)
+    .forEach((el) => el.classList.add("active"));
+}
+
 function renderProfile(profile) {
   if (!profile || !profile.hasTasteVector) {
     profileEl.innerHTML = `<p class="muted">Still building your taste profile. Click Sync With Spotify and wait a few seconds.</p>`;
+    setRoomStepperState();
     return;
   }
 
@@ -200,6 +314,7 @@ function renderProfile(profile) {
     <p><strong>Vector dims:</strong> ${profile.dims}</p>
     <p class="muted"><strong>Updated:</strong> ${updated}</p>
   `;
+  setRoomStepperState();
 }
 
 function renderBarRows(rows) {
@@ -240,8 +355,13 @@ function roleColor(role) {
 }
 
 function renderProjectionMap(map) {
+  if (!recommendationMapEl) {
+    return;
+  }
+
   if (!map?.points?.length) {
-    return `<p class="muted" style="margin-top:10px;">Projection map appears after recommendations are generated.</p>`;
+    recommendationMapEl.innerHTML = `<p class="muted" style="margin-top:10px;">Projection map appears after recommendations are generated.</p>`;
+    return;
   }
 
   const width = 620;
@@ -254,9 +374,14 @@ function renderProjectionMap(map) {
     .map((point) => {
       const cx = toX(Number(point.x ?? 0.5));
       const cy = toY(Number(point.y ?? 0.5));
-      const r = point.role === "target" ? 6 : point.role === "selected" ? 5 : 3.5;
+      const isCentroid = point.role === "taste";
+      const r = point.role === "target" ? 6.5 : point.role === "selected" ? 5.5 : isCentroid ? 6.5 : 3.5;
       const stroke = point.role === "selected" ? "#111111" : "#ffffff";
-      return `<circle cx="${cx.toFixed(2)}" cy="${cy.toFixed(2)}" r="${r}" fill="${roleColor(point.role)}" stroke="${stroke}" stroke-width="1.2"><title>${point.label} [${point.role}]${typeof point.score === "number" ? ` ${(point.score * 100).toFixed(1)}%` : ""}</title></circle>`;
+      const trackId = point.id && !point.id.startsWith("target-") && point.id !== "taste-centroid" ? point.id : "";
+      const ring = isCentroid
+        ? `<circle class="centroid-ring" cx="${cx.toFixed(2)}" cy="${cy.toFixed(2)}" r="11" fill="none" stroke="#2f6f2f" stroke-width="2"></circle>`
+        : "";
+      return `${ring}<circle class="projection-point" data-track-id="${trackId}" cx="${cx.toFixed(2)}" cy="${cy.toFixed(2)}" r="${r}" fill="${roleColor(point.role)}" stroke="${stroke}" stroke-width="1.2"><title>${point.label} [${point.role}]${typeof point.score === "number" ? ` ${(point.score * 100).toFixed(1)}%` : ""}</title></circle>`;
     })
     .join("");
 
@@ -271,7 +396,7 @@ function renderProjectionMap(map) {
     })
     .join("");
 
-  return `
+  recommendationMapEl.innerHTML = `
     <div class="projection-wrap">
       <div class="projection-axis"><strong>2D projection:</strong> X = ${map.axes?.x ?? "feature_x"}, Y = ${map.axes?.y ?? "feature_y"} (${map.mode ?? "unknown"})</div>
       <svg class="projection-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
@@ -282,15 +407,24 @@ function renderProjectionMap(map) {
       </svg>
       <div class="projection-legend">
         <span class="legend-pill">target = black</span>
-        <span class="legend-pill">taste centroid = green</span>
+        <span class="legend-pill">taste centroid = green + pulse</span>
         <span class="legend-pill">selected recommendations = blue</span>
         <span class="legend-pill">other candidates = gray</span>
       </div>
     </div>
   `;
+
+  recommendationMapEl.querySelectorAll(".projection-point[data-track-id]").forEach((el) => {
+    const trackId = el.getAttribute("data-track-id");
+    if (!trackId) {
+      return;
+    }
+    el.addEventListener("mouseenter", () => highlightRecommendation(trackId));
+    el.addEventListener("mouseleave", () => clearRecommendationHighlights());
+  });
 }
 
-function renderModelInsights(insights, projectionMap = null) {
+function renderModelInsights(insights) {
   if (!modelInsightsEl) {
     return;
   }
@@ -352,15 +486,26 @@ function renderModelInsights(insights, projectionMap = null) {
         </div>
       </div>
     </div>
-    ${renderProjectionMap(projectionMap)}
   `;
 }
 
 function renderParticipants(room) {
   const participants = room?.participants ?? [];
+  lastRoomParticipants = participants.filter((participant) => participant.connected).length;
+  roomPublished = Boolean(room?.published);
+  setPublishButtonLabel();
+
   if (!participants.length) {
     participantListEl.innerHTML = `<p class="muted">No participants yet.</p>`;
+    setRoomHelp("Create/join a room, then share this exact room name with one other person. Compatibility and mutual picks appear once both users are connected and synced.");
+    setRoomStepperState();
     return;
+  }
+
+  if (lastRoomParticipants < 2) {
+    setRoomHelp("Only one person is here. Have a second user join the same room name, then click Recompute Compatibility.");
+  } else {
+    setRoomHelp("Room is active with multiple users. Recompute Compatibility anytime either person refreshes sync or playback changes.");
   }
 
   participantListEl.innerHTML = participants
@@ -376,10 +521,16 @@ function renderParticipants(room) {
       `;
     })
     .join("");
+  setRoomStepperState();
 }
 
 function renderCompatibility(payload) {
-  if (!payload || payload.status === "waiting_for_pair") {
+  if (
+    !payload
+    || payload.status === "waiting_for_pair"
+    || typeof payload?.score?.overallScore !== "number"
+    || !payload.similarityLabel
+  ) {
     compatibilityEl.innerHTML = `<p class="muted">Waiting for two participants with taste profiles.</p>`;
     horoscopeEl.innerHTML = `<p class="muted">Horoscope appears after compatibility is computed.</p>`;
     nowCompareEl.innerHTML = `<p class="muted">Compare now playing once both users share playback state.</p>`;
@@ -455,7 +606,8 @@ async function refresh() {
   renderNowPlaying(payload.nowPlaying);
   renderRecommendations(payload.recommendations);
   renderProfile(payload.profile);
-  renderModelInsights(payload.modelInsights, payload.projectionMap ?? null);
+  renderModelInsights(payload.modelInsights);
+  renderProjectionMap(payload.projectionMap ?? null);
 
   if (payload.controls) {
     diversityInput.value = String(payload.controls.diversity);
@@ -520,7 +672,8 @@ async function bootstrapSync(force = false) {
     setSyncStatus(`Spotify sync complete. Taste vector updated (${payload.dims ?? 0} dims).`);
   }
 
-  renderModelInsights(payload.modelInsights, payload.projectionMap ?? null);
+  renderModelInsights(payload.modelInsights);
+  renderProjectionMap(payload.projectionMap ?? null);
 
   return payload;
 }
@@ -554,6 +707,8 @@ async function checkAuth() {
 }
 
 async function refreshRoomPanels() {
+  await loadActiveRooms();
+
   if (!activeRoomName) {
     renderParticipants(null);
     renderCompatibility(null);
@@ -658,6 +813,7 @@ async function joinRoom() {
   activeRoomName = tokenPayload.roomName;
   activeParticipantName = tokenPayload.participantName;
   setRoomStatus(`Connected to room ${activeRoomName} as ${activeParticipantName}`, true);
+  setRoomStepperState();
 
   await shareLocalStateViaBackend();
   await refreshRoomPanels();
@@ -678,8 +834,12 @@ async function leaveRoom() {
 
   activeRoomName = "";
   activeParticipantName = "";
+  roomPublished = false;
+  lastRoomParticipants = 0;
+  setPublishButtonLabel();
   localSharedState = { tasteProfile: null, nowPlayingState: null };
   setRoomStatus("Not connected to a room", false);
+  setRoomStepperState();
   await refreshRoomPanels();
 }
 
@@ -725,6 +885,47 @@ recomputeRoomBtn.addEventListener("click", async () => {
   }
 });
 
+copyRoomBtn?.addEventListener("click", async () => {
+  const roomName = roomNameInput.value.trim();
+  if (!roomName) {
+    setRoomStatus("Enter a room name first.");
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(roomName);
+    setRoomStatus(`Room name copied: ${roomName}`, true);
+  } catch {
+    setRoomStatus("Could not copy room name. Copy it manually.");
+  }
+});
+
+publishRoomBtn?.addEventListener("click", async () => {
+  const roomName = activeRoomName || roomNameInput.value.trim();
+  if (!roomName) {
+    setRoomStatus("Join or enter a room name first.");
+    return;
+  }
+  try {
+    const next = !roomPublished;
+    const response = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/publish`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ published: next }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Could not update room visibility");
+    }
+    roomPublished = Boolean(payload.published);
+    setPublishButtonLabel();
+    setRoomStepperState();
+    setRoomStatus(roomPublished ? `Room ${roomName} published.` : `Room ${roomName} hidden.`, true);
+    await loadActiveRooms();
+  } catch (error) {
+    setRoomStatus(error instanceof Error ? error.message : String(error));
+  }
+});
+
 pollBtn.addEventListener("click", async () => {
   polling = !polling;
   pollBtn.textContent = polling ? "Stop live polling" : "Start live polling";
@@ -744,9 +945,40 @@ pollBtn.addEventListener("click", async () => {
   }
 });
 
+recEl.addEventListener("mouseover", (event) => {
+  const target = event.target;
+  if (!(target instanceof Element)) {
+    return;
+  }
+  const card = target.closest(".rec-item");
+  if (!(card instanceof HTMLElement)) {
+    return;
+  }
+  const trackId = card.dataset.trackId;
+  if (trackId) {
+    highlightRecommendation(trackId);
+  }
+});
+
+recEl.addEventListener("mouseout", (event) => {
+  const target = event.target;
+  if (!(target instanceof Element)) {
+    return;
+  }
+  const card = target.closest(".rec-item");
+  if (card) {
+    clearRecommendationHighlights();
+  }
+});
+
 checkAuth().catch((error) => {
   showFriendlyError("Failed to initialize app", String(error));
 });
 
 refreshRoomPanels().catch((error) => setDebug(String(error)));
 updateControlLabels();
+setPublishButtonLabel();
+setRoomStepperState();
+loadActiveRooms().catch(() => {
+  // Active room directory is optional.
+});

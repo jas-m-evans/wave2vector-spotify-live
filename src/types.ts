@@ -131,6 +131,7 @@ export type RoomStateSnapshot = {
   roomName: string;
   participants: RoomParticipantSnapshot[];
   updatedAt: number;
+  published?: boolean;
   lastCompatibility?: CompatibilitySummary;
   lastMutualRecommendations?: MutualRecommendation[];
 };

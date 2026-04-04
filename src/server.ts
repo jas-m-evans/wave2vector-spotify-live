@@ -9,10 +9,12 @@ import { computeCompatibility } from "./compatibility.js";
 import {
   getRoomSnapshot,
   getTwoActiveParticipants,
+  listActiveRooms,
   markParticipantJoined,
   markParticipantLeft,
   setCompatibilitySummary,
   setMutualRecommendations,
+  setRoomPublished,
   shareNowPlaying,
   shareTasteProfile,
 } from "./livekitStore.js";
@@ -97,6 +99,10 @@ const liveKitTokenBodySchema = z.object({
 const roomShareBodySchema = z.object({
   participantName: z.string().trim().min(1).max(60),
   includeNowPlaying: z.boolean().optional(),
+});
+
+const roomPublishBodySchema = z.object({
+  published: z.boolean(),
 });
 
 const bootstrapSyncBodySchema = z.object({
@@ -866,6 +872,35 @@ app.post("/api/rooms/:roomName/leave", async (req, res) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return res.status(400).json({ error: message });
+  }
+});
+
+app.post("/api/rooms/:roomName/publish", async (req, res) => {
+  try {
+    await getActiveSession(req);
+    const roomName = cleanRoomName(req.params.roomName);
+    const body = roomPublishBodySchema.parse(req.body);
+    const room = await setRoomPublished(roomName, body.published);
+    return res.json({
+      roomName: room.roomName,
+      published: Boolean(room.published),
+      updatedAt: room.updatedAt,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(400).json({ error: message });
+  }
+});
+
+app.get("/api/rooms/active", async (req, res) => {
+  try {
+    await getActiveSession(req);
+    const limit = Math.max(1, Math.min(30, Number(req.query.limit ?? 20)));
+    const rooms = await listActiveRooms(limit);
+    return res.json({ rooms });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(401).json({ error: message });
   }
 });
 

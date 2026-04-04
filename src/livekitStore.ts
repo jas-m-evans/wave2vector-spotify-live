@@ -106,6 +106,7 @@ function ensureRoom(roomName: string): RoomStateSnapshot {
     roomName,
     participants: [],
     updatedAt: Date.now(),
+    published: false,
   };
   rooms.set(roomName, created);
   return created;
@@ -288,4 +289,38 @@ export async function getTwoActiveParticipants(
   }
 
   return [active[0], active[1]];
+}
+
+export async function setRoomPublished(roomName: string, published: boolean): Promise<RoomStateSnapshot> {
+  await ensureLoaded();
+  const room = ensureRoom(roomName);
+  room.published = published;
+  room.updatedAt = Date.now();
+  await persistRooms();
+  return room;
+}
+
+export async function listActiveRooms(limit = 20): Promise<Array<{
+  roomName: string;
+  published: boolean;
+  connectedCount: number;
+  tasteReadyCount: number;
+  updatedAt: number;
+}>> {
+  await ensureLoaded();
+  return [...rooms.values()]
+    .filter((room) => room.published)
+    .map((room) => {
+      const connected = room.participants.filter((participant) => participant.connected);
+      const tasteReady = connected.filter((participant) => participant.tasteProfile);
+      return {
+        roomName: room.roomName,
+        published: Boolean(room.published),
+        connectedCount: connected.length,
+        tasteReadyCount: tasteReady.length,
+        updatedAt: room.updatedAt,
+      };
+    })
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, Math.max(1, limit));
 }

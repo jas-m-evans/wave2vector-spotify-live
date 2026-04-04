@@ -72,6 +72,15 @@
         gap: 10px;
         align-items: center;
       }
+      .track.rec-item {
+        border: 2px solid transparent;
+        padding: 6px;
+        transition: background 120ms ease, border-color 120ms ease;
+      }
+      .track.rec-item.active {
+        border-color: #111111;
+        background: #f2f6ff;
+      }
       .track img {
         width: 60px;
         height: 60px;
@@ -265,6 +274,77 @@
         background: #fff;
         padding: 2px 6px;
       }
+      .rec-layout {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 10px;
+      }
+      .projection-point {
+        cursor: pointer;
+        transition: transform 120ms ease;
+      }
+      .projection-point.active {
+        filter: drop-shadow(0 0 4px #00000066);
+      }
+      .centroid-ring {
+        animation: pulseRing 1300ms ease-in-out infinite;
+      }
+      .room-help {
+        border: 1px dashed #111111;
+        padding: 8px;
+        font-size: 0.84rem;
+        margin-top: 8px;
+        background: #fafafa;
+      }
+      .stepper {
+        display: grid;
+        gap: 6px;
+        margin-top: 10px;
+      }
+      .step {
+        display: grid;
+        grid-template-columns: 24px 1fr;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid #111111;
+        background: #fff;
+        padding: 6px 8px;
+        font-size: 0.84rem;
+      }
+      .step .dot {
+        width: 12px;
+        height: 12px;
+        border: 2px solid #111111;
+        background: #fff;
+      }
+      .step.active {
+        background: #eef4ff;
+      }
+      .step.active .dot {
+        background: #111111;
+      }
+      .active-rooms {
+        margin-top: 10px;
+        border: 1px dashed #111111;
+        padding: 8px;
+      }
+      .room-list-item {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        align-items: center;
+        padding: 6px 0;
+        border-bottom: 1px solid #ddd;
+        font-size: 0.84rem;
+      }
+      .room-list-item:last-child {
+        border-bottom: none;
+      }
+      @keyframes pulseRing {
+        0% { opacity: 0.35; }
+        50% { opacity: 0.9; }
+        100% { opacity: 0.35; }
+      }
       @media (max-width: 760px) {
         .row {
           grid-template-columns: 1fr;
@@ -276,6 +356,9 @@
           grid-template-columns: 1fr;
         }
         .insight-grid {
+          grid-template-columns: 1fr;
+        }
+        .rec-layout {
           grid-template-columns: 1fr;
         }
       }
@@ -340,10 +423,21 @@
           <div>
             <button id="join-room">Create/Join Room</button>
             <button id="leave-room">Leave Room</button>
+            <button id="copy-room">Copy Room Name</button>
+            <button id="publish-room">Publish Room</button>
           </div>
         </div>
         <button id="recompute-room">Recompute Compatibility</button>
         <div id="room-status" class="status-badge muted">Not connected to a room</div>
+        <div id="room-help" class="room-help muted">Create/join a room, then share the same room name with one other person. Compatibility and mutual picks appear when both users are connected and have synced taste profiles.</div>
+        <div id="room-stepper" class="stepper">
+          <div id="step-connect" class="step"><span class="dot"></span><span>Step 1: Connect Spotify</span></div>
+          <div id="step-join" class="step"><span class="dot"></span><span>Step 2: Join a room</span></div>
+          <div id="step-invite" class="step"><span class="dot"></span><span>Step 3: Invite a friend (same room name)</span></div>
+          <div id="step-wait" class="step"><span class="dot"></span><span>Step 4: Wait for second user</span></div>
+          <div id="step-compute" class="step"><span class="dot"></span><span>Step 5: Recompute compatibility</span></div>
+        </div>
+        <div id="active-rooms" class="active-rooms muted">No published rooms yet.</div>
         <div id="participant-list" style="margin-top:10px;"></div>
       </section>
 
@@ -355,7 +449,10 @@
 
         <section class="panel">
           <h2>Recommendations</h2>
-          <div id="recommendations"></div>
+          <div class="rec-layout">
+            <div id="recommendations"></div>
+            <div id="recommendation-map"><p class="muted">Map appears after recommendations load.</p></div>
+          </div>
         </section>
       </div>
 
