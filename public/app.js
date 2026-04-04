@@ -23,18 +23,21 @@ const recommendationMapEl = document.getElementById("recommendation-map");
 const roomNameInput = document.getElementById("room-name");
 const participantNameInput = document.getElementById("participant-name");
 const joinRoomBtn = document.getElementById("join-room");
+const openRoomBtn = document.getElementById("open-room");
 const leaveRoomBtn = document.getElementById("leave-room");
 const recomputeRoomBtn = document.getElementById("recompute-room");
 const copyRoomBtn = document.getElementById("copy-room");
-const shareRoomBtn = document.getElementById("share-room");
-const shareActionEl = document.getElementById("share-action");
+const copyRoomLinkInlineBtn = document.getElementById("copy-room-link-inline");
+const shareMenuToggleBtn = document.getElementById("share-menu-toggle");
+const shareMenuEl = document.getElementById("share-menu");
+const shareCopyLinkBtn = document.getElementById("share-copy-link");
+const shareEmailLinkBtn = document.getElementById("share-email-link");
 const roomShareUrlInput = document.getElementById("room-share-url");
 const publishRoomBtn = document.getElementById("publish-room");
 const refreshHistoryBtn = document.getElementById("refresh-history");
 const roomHistoryEl = document.getElementById("room-history");
 const roomStatusEl = document.getElementById("room-status");
 const roomHelpEl = document.getElementById("room-help");
-const roomStepperEl = document.getElementById("room-stepper");
 const activeRoomsEl = document.getElementById("active-rooms");
 const participantListEl = document.getElementById("participant-list");
 const compatibilityEl = document.getElementById("compatibility");
@@ -48,12 +51,14 @@ const accountRegisterBtn = document.getElementById("account-register");
 const accountLoginBtn = document.getElementById("account-login");
 const accountLogoutBtn = document.getElementById("account-logout");
 const accountStatusEl = document.getElementById("account-status");
+const googleSigninEl = document.getElementById("google-signin");
+const accountGateEl = document.getElementById("account-gate");
 const homeViewBtn = document.getElementById("view-home");
 const lobbyViewBtn = document.getElementById("view-lobby");
-const roomViewBtn = document.getElementById("view-room");
 const homeScreenEl = document.getElementById("screen-home");
 const lobbyScreenEl = document.getElementById("screen-lobby");
 const roomScreenEl = document.getElementById("screen-room");
+const toastEl = document.getElementById("toast");
 
 let activeRoomName = "";
 let activeParticipantName = "";
@@ -106,7 +111,31 @@ function setActiveScreen(screen) {
   roomScreenEl?.classList.toggle("active", isRoom);
   homeViewBtn?.classList.toggle("active", isHome);
   lobbyViewBtn?.classList.toggle("active", isLobby);
-  roomViewBtn?.classList.toggle("active", isRoom);
+}
+
+function setFeatureGate(locked) {
+  document.querySelectorAll("[data-requires-account='true']").forEach((element) => {
+    element.classList.toggle("hidden", locked);
+  });
+  accountGateEl?.classList.toggle("hidden", !locked);
+  if (locked) {
+    setActiveScreen("home");
+  }
+}
+
+let toastTimer = null;
+function showToast(message) {
+  if (!toastEl) {
+    return;
+  }
+  toastEl.textContent = message;
+  toastEl.classList.remove("hidden");
+  if (toastTimer) {
+    clearTimeout(toastTimer);
+  }
+  toastTimer = setTimeout(() => {
+    toastEl.classList.add("hidden");
+  }, 1500);
 }
 
 participantNameInput.value = localStorage.getItem("participantName") ?? "";
@@ -223,6 +252,17 @@ function updateShareUrlInput(roomName) {
     : "Join a room to generate a share URL";
 }
 
+function buildShareEmailMessage(roomName) {
+  const url = getShareRoomUrl(roomName);
+  const subject = encodeURIComponent(`Join my Wave2Vector room: ${roomName}`);
+  const bodyText = `Join my Wave2Vector room and compare our music taste.\n\nRoom: ${roomName}\nLink: ${url}`;
+  return {
+    subject,
+    body: encodeURIComponent(bodyText),
+    rawBody: bodyText,
+  };
+}
+
 function setStreamMode(nextMode) {
   streamMode = nextMode === "batch" ? "batch" : "live";
   modeLiveBtn?.classList.toggle("active", streamMode === "live");
@@ -310,30 +350,6 @@ async function loadRoomHistory() {
   } catch {
     // History is optional and should not break room flow.
   }
-}
-
-function setRoomStepperState() {
-  if (!roomStepperEl) {
-    return;
-  }
-
-  const steps = {
-    connect: roomStepperEl.querySelector("#step-connect"),
-    join: roomStepperEl.querySelector("#step-join"),
-    invite: roomStepperEl.querySelector("#step-invite"),
-    wait: roomStepperEl.querySelector("#step-wait"),
-    compute: roomStepperEl.querySelector("#step-compute"),
-  };
-
-  const hasTaste = Boolean(profileEl.textContent?.includes("Vector dims"));
-  const joined = Boolean(activeRoomName);
-  const roomReady = lastRoomParticipants >= 2;
-
-  steps.connect?.classList.toggle("active", isAuthenticated && hasTaste);
-  steps.join?.classList.toggle("active", joined);
-  steps.invite?.classList.toggle("active", joined && roomPublished);
-  steps.wait?.classList.toggle("active", joined && roomReady);
-  steps.compute?.classList.toggle("active", joined && roomReady && hasTaste);
 }
 
 function setPublishButtonLabel() {
@@ -429,11 +445,13 @@ function renderAccountStatus(payload) {
   if (!payload?.authenticated || !payload?.account) {
     currentAccount = null;
     accountStatusEl.textContent = "Not logged into app account yet.";
+    setFeatureGate(true);
     return;
   }
   currentAccount = payload.account;
   const cached = payload.account.hasCachedProfile ? "cached profile ready" : "no cached profile yet";
   accountStatusEl.textContent = `${payload.account.email} (${cached})`;
+  setFeatureGate(false);
 }
 
 async function checkAccountAuth() {
@@ -445,6 +463,47 @@ async function checkAccountAuth() {
   } catch (error) {
     logEvent("account", "Could not fetch account status", error);
     return { authenticated: false };
+  }
+}
+
+async function handleGoogleCredential(credential) {
+  try {
+    const response = await fetch("/api/account/google-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken: credential }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Google login failed");
+    }
+    renderAccountStatus({ authenticated: true, account: payload.account });
+    setSyncStatus("Google sign-in complete. Connect Spotify once to build your profile cache.");
+  } catch (error) {
+    accountStatusEl.textContent = error instanceof Error ? error.message : String(error);
+  }
+}
+
+async function initGoogleSignin() {
+  try {
+    const response = await fetch("/api/account/google-config");
+    const payload = await response.json();
+    if (!payload.enabled || !payload.clientId || !window.google || !googleSigninEl) {
+      return;
+    }
+
+    window.google.accounts.id.initialize({
+      client_id: payload.clientId,
+      callback: (res) => handleGoogleCredential(res.credential),
+    });
+    window.google.accounts.id.renderButton(googleSigninEl, {
+      theme: "outline",
+      size: "large",
+      text: "continue_with",
+      shape: "rectangular",
+    });
+  } catch (error) {
+    logEvent("account", "Google sign-in init failed", error);
   }
 }
 
@@ -494,7 +553,6 @@ function highlightRecommendation(trackId) {
 function renderProfile(profile) {
   if (!profile || !profile.hasTasteVector) {
     profileEl.innerHTML = `<p class="muted">Still building your taste profile. Click Sync With Spotify and wait a few seconds.</p>`;
-    setRoomStepperState();
     return;
   }
 
@@ -503,7 +561,6 @@ function renderProfile(profile) {
     <p><strong>Vector dims:</strong> ${profile.dims}</p>
     <p class="muted"><strong>Updated:</strong> ${updated}</p>
   `;
-  setRoomStepperState();
 }
 
 function renderBarRows(rows) {
@@ -687,7 +744,6 @@ function renderParticipants(room) {
   if (!participants.length) {
     participantListEl.innerHTML = `<p class="muted">No participants yet.</p>`;
     setRoomHelp("Create/join a room, then share this exact room name with one other person. Compatibility and mutual picks appear once both users are connected and synced.");
-    setRoomStepperState();
     return;
   }
 
@@ -710,7 +766,6 @@ function renderParticipants(room) {
       `;
     })
     .join("");
-  setRoomStepperState();
 }
 
 function renderCompatibility(payload) {
@@ -1090,7 +1145,6 @@ async function joinRoom() {
   activeParticipantName = tokenPayload.participantName;
   updateShareUrlInput(activeRoomName);
   setRoomStatus(`Connected to room ${activeRoomName} as ${activeParticipantName}`, true);
-  setRoomStepperState();
 
   await shareLocalStateViaBackend();
   await refreshRoomPanels();
@@ -1119,7 +1173,6 @@ async function leaveRoom() {
   setPublishButtonLabel();
   localSharedState = { tasteProfile: null, nowPlayingState: null };
   setRoomStatus("Not connected to a room", false);
-  setRoomStepperState();
   await refreshRoomPanels();
   logEvent("rooms", "Leave room complete", { roomName });
 }
@@ -1204,28 +1257,91 @@ copyRoomBtn?.addEventListener("click", async () => {
   }
   try {
     await navigator.clipboard.writeText(roomName);
-    setRoomStatus(`Room name copied: ${roomName}`, true);
+    showToast("Copied to clipboard. Done.");
   } catch {
     setRoomStatus("Could not copy room name. Copy it manually.");
   }
 });
 
-shareRoomBtn?.addEventListener("click", async () => {
+copyRoomLinkInlineBtn?.addEventListener("click", async () => {
   const roomName = (activeRoomName || roomNameInput.value.trim()).trim();
   if (!roomName) {
     setRoomStatus("Enter a room name first.");
     return;
   }
-  const action = shareActionEl?.value ?? "copy_link";
   const url = getShareRoomUrl(roomName);
-  if (action === "copy_link") {
-    try {
-      await navigator.clipboard.writeText(url);
-      setRoomStatus("Share link copied.", true);
-    } catch {
-      setRoomStatus("Could not copy share link.");
-    }
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast("Copied to clipboard. Done.");
+  } catch {
+    setRoomStatus("Could not copy share link.");
   }
+});
+
+shareMenuToggleBtn?.addEventListener("click", () => {
+  shareMenuEl?.classList.toggle("hidden");
+  if (shareMenuToggleBtn && shareMenuEl) {
+    shareMenuToggleBtn.setAttribute("aria-expanded", shareMenuEl.classList.contains("hidden") ? "false" : "true");
+  }
+});
+
+document.addEventListener("click", (event) => {
+  if (!shareMenuEl || !shareMenuToggleBtn) {
+    return;
+  }
+  const target = event.target;
+  if (!(target instanceof Element)) {
+    return;
+  }
+  if (!shareMenuEl.contains(target) && !shareMenuToggleBtn.contains(target)) {
+    shareMenuEl.classList.add("hidden");
+    shareMenuToggleBtn.setAttribute("aria-expanded", "false");
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") {
+    return;
+  }
+  if (!shareMenuEl?.classList.contains("hidden")) {
+    shareMenuEl.classList.add("hidden");
+    shareMenuToggleBtn?.setAttribute("aria-expanded", "false");
+  }
+});
+
+shareCopyLinkBtn?.addEventListener("click", async () => {
+  const roomName = (activeRoomName || roomNameInput.value.trim()).trim();
+  if (!roomName) {
+    setRoomStatus("Enter a room name first.");
+    return;
+  }
+  const url = getShareRoomUrl(roomName);
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast("Copied to clipboard. Done.");
+    shareMenuEl?.classList.add("hidden");
+    shareMenuToggleBtn?.setAttribute("aria-expanded", "false");
+  } catch {
+    setRoomStatus("Could not copy share link.");
+  }
+});
+
+shareEmailLinkBtn?.addEventListener("click", async () => {
+  const roomName = (activeRoomName || roomNameInput.value.trim()).trim();
+  if (!roomName) {
+    setRoomStatus("Enter a room name first.");
+    return;
+  }
+  const parts = buildShareEmailMessage(roomName);
+  try {
+    await navigator.clipboard.writeText(parts.rawBody);
+    showToast("Invite message copied. Opening email app.");
+  } catch {
+    showToast("Opening email app.");
+  }
+  window.location.href = `mailto:?subject=${parts.subject}&body=${parts.body}`;
+  shareMenuEl?.classList.add("hidden");
+  shareMenuToggleBtn?.setAttribute("aria-expanded", "false");
 });
 
 publishRoomBtn?.addEventListener("click", async () => {
@@ -1315,18 +1431,23 @@ homeViewBtn?.addEventListener("click", () => {
 });
 
 lobbyViewBtn?.addEventListener("click", () => {
+  if (!currentAccount) {
+    setSyncStatus("Create or log in to an account first.");
+    setActiveScreen("home");
+    return;
+  }
   setActiveScreen("lobby");
   logEvent("ui", "Switched to Lobby screen");
 });
 
-roomViewBtn?.addEventListener("click", () => {
+openRoomBtn?.addEventListener("click", () => {
   if (!activeRoomName) {
     setRoomStatus("Join a room from Lobby first.");
     setActiveScreen("lobby");
     return;
   }
   setActiveScreen("room");
-  logEvent("ui", "Switched to Room screen");
+  logEvent("ui", "Opened Room screen from Lobby");
 });
 
 recEl.addEventListener("mouseover", (event) => {
@@ -1362,11 +1483,15 @@ checkAuth().catch((error) => {
 checkAccountAuth().catch((error) => {
   logEvent("init", "Account check failed", error);
 });
+initGoogleSignin().catch((error) => {
+  logEvent("init", "Google init failed", error);
+});
 
 refreshRoomPanels().catch((error) => setDebug(String(error)));
 updateControlLabels();
 setPublishButtonLabel();
 setSyncPhaseState("auth");
+setFeatureGate(true);
 updateShareUrlInput(roomNameInput.value.trim());
 setActiveScreen("home");
 loadActiveRooms().catch(() => {

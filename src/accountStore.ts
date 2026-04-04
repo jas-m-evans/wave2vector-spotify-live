@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { Redis } from "@upstash/redis";
 import { SessionRecord, SpotifyProfile } from "./types.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -22,8 +23,9 @@ type AccountCache = {
 export type AppAccount = {
   id: string;
   email: string;
-  passwordSalt: string;
-  passwordHash: string;
+  passwordSalt?: string;
+  passwordHash?: string;
+  authProvider: "password" | "google";
   createdAt: number;
   updatedAt: number;
   cache?: AccountCache;
@@ -36,6 +38,19 @@ type PersistedAccounts = {
 
 const accounts = new Map<string, AppAccount>();
 let loaded = false;
+const useRedis = Boolean(process.env.UPSTASH_REDIS_REST_URL);
+let redis: Redis | null = null;
+
+if (useRedis) {
+  try {
+    redis = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL!,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+    });
+  } catch {
+    redis = null;
+  }
+}
 
 function hashPassword(password: string, salt: string): string {
   return crypto.pbkdf2Sync(password, salt, 120_000, 32, "sha256").toString("hex");
@@ -46,8 +61,15 @@ async function ensureLoaded(): Promise<void> {
     return;
   }
   try {
-    const raw = await fs.readFile(accountsPath, "utf8");
-    const parsed = JSON.parse(raw) as PersistedAccounts;
+    const raw = redis
+      ? await redis.get("app:accounts")
+      : await fs.readFile(accountsPath, "utf8");
+    const serial = typeof raw === "string" ? raw : "";
+    if (!serial) {
+      loaded = true;
+      return;
+    }
+    const parsed = JSON.parse(serial) as PersistedAccounts;
     for (const account of parsed.accounts ?? []) {
       accounts.set(account.id, account);
     }
@@ -58,12 +80,26 @@ async function ensureLoaded(): Promise<void> {
 }
 
 async function persist(): Promise<void> {
-  await fs.mkdir(dataDir, { recursive: true });
   const payload: PersistedAccounts = {
     updatedAt: new Date().toISOString(),
     accounts: [...accounts.values()],
   };
-  await fs.writeFile(accountsPath, JSON.stringify(payload, null, 2), "utf8");
+  const serialized = JSON.stringify(payload, null, 2);
+  if (redis) {
+    try {
+      await redis.set("app:accounts", serialized);
+      return;
+    } catch {
+      // fall through to local fs fallback
+    }
+  }
+
+  try {
+    await fs.mkdir(dataDir, { recursive: true });
+    await fs.writeFile(accountsPath, serialized, "utf8");
+  } catch {
+    // In read-only serverless filesystems, keep data in memory for runtime.
+  }
 }
 
 export async function createAccount(email: string, password: string): Promise<AppAccount> {
@@ -80,6 +116,7 @@ export async function createAccount(email: string, password: string): Promise<Ap
     email: normalized,
     passwordSalt: salt,
     passwordHash: hashPassword(password, salt),
+    authProvider: "password",
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -95,10 +132,37 @@ export async function loginAccount(email: string, password: string): Promise<App
   if (!account) {
     throw new Error("Invalid email or password.");
   }
+  if (account.authProvider !== "password" || !account.passwordSalt || !account.passwordHash) {
+    throw new Error("This account uses Google sign-in. Use Google to log in.");
+  }
   const expected = hashPassword(password, account.passwordSalt);
   if (expected !== account.passwordHash) {
     throw new Error("Invalid email or password.");
   }
+  return account;
+}
+
+export async function upsertGoogleAccount(email: string): Promise<AppAccount> {
+  await ensureLoaded();
+  const normalized = email.trim().toLowerCase();
+  const existing = [...accounts.values()].find((account) => account.email === normalized);
+  if (existing) {
+    existing.authProvider = existing.authProvider ?? "google";
+    existing.updatedAt = Date.now();
+    accounts.set(existing.id, existing);
+    await persist();
+    return existing;
+  }
+
+  const account: AppAccount = {
+    id: crypto.randomUUID(),
+    email: normalized,
+    authProvider: "google",
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  accounts.set(account.id, account);
+  await persist();
   return account;
 }
 

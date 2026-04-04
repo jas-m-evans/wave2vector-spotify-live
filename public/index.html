@@ -50,10 +50,12 @@
         margin-bottom: 8px;
         text-transform: uppercase;
         letter-spacing: 0.04em;
+        transition: transform 120ms ease, background 120ms ease, color 120ms ease;
       }
       button:hover {
         background: #111111;
         color: #ffffff;
+        transform: translateY(-1px);
       }
       .top-nav {
         display: flex;
@@ -69,6 +71,26 @@
       }
       .screen.active {
         display: block;
+      }
+      .hidden {
+        display: none !important;
+      }
+      .pitch-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(170px, 1fr));
+        gap: 10px;
+        margin-top: 10px;
+      }
+      .pitch-card {
+        border: 2px solid #111111;
+        background: #ffffff;
+        padding: 10px;
+        min-height: 120px;
+      }
+      .pitch-icon {
+        width: 34px;
+        height: 34px;
+        margin-bottom: 8px;
       }
       pre {
         background: #ffffff;
@@ -357,6 +379,10 @@
         padding: 10px;
         font-size: 0.84rem;
       }
+      .helper-note.instructions {
+        border-left-color: #888;
+        background: #f3f3f3;
+      }
       .tiny-icon-btn {
         width: 44px;
         height: 44px;
@@ -368,18 +394,69 @@
         width: 18px;
         height: 18px;
       }
+      .field-with-action {
+        position: relative;
+      }
+      .field-with-action input {
+        padding-right: 54px;
+      }
+      .field-with-action .inside-action {
+        position: absolute;
+        right: 6px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 38px;
+        height: 38px;
+        margin: 0;
+      }
       .share-row {
         margin-top: 10px;
         display: grid;
-        grid-template-columns: 1fr 180px auto;
+        grid-template-columns: 1fr auto;
         gap: 8px;
       }
-      .share-row select,
       .share-row input {
         width: 100%;
         box-sizing: border-box;
         padding: 10px;
         border: 2px solid #111111;
+      }
+      .share-menu-wrap {
+        position: relative;
+        justify-self: end;
+      }
+      .share-menu {
+        position: absolute;
+        right: 0;
+        top: calc(100% + 6px);
+        z-index: 20;
+        min-width: 230px;
+        background: #ffffff;
+        border: 2px solid #111111;
+        box-shadow: 4px 4px 0 #000;
+        padding: 8px;
+      }
+      .share-menu button {
+        display: block;
+        width: 100%;
+        text-align: left;
+        margin-right: 0;
+        margin-bottom: 6px;
+      }
+      .share-menu button:last-child {
+        margin-bottom: 0;
+      }
+      .toast {
+        position: fixed;
+        right: 20px;
+        bottom: 20px;
+        z-index: 40;
+        background: #111;
+        color: #fff;
+        border: 2px solid #111;
+        padding: 10px 14px;
+        font-size: 0.84rem;
+        box-shadow: 4px 4px 0 #000;
       }
       .projection-point {
         cursor: pointer;
@@ -481,6 +558,9 @@
         .account-grid {
           grid-template-columns: 1fr;
         }
+        .pitch-grid {
+          grid-template-columns: 1fr;
+        }
         .share-row {
           grid-template-columns: 1fr;
         }
@@ -499,10 +579,31 @@
       <div class="top-nav">
         <button id="view-home" class="active">Home</button>
         <button id="view-lobby">Lobby</button>
-        <button id="view-room">Room</button>
       </div>
 
       <div id="screen-home" class="screen active">
+        <section id="account-gate" class="panel">
+          <h2>Create Your Free Account</h2>
+          <p class="muted">Build your personal Spotify taste map, keep it cached, and jump into shared rooms with friends. We only use your account for sign-in and product access. No spam, no marketing blasts.</p>
+          <div class="pitch-grid">
+            <div class="pitch-card">
+              <svg class="pitch-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M6 13c2-2 10-2 12 0"></path><path d="M8 9c3-1 5-1 8 0"></path></svg>
+              <strong>Taste Mapping</strong>
+              <p class="muted">One sync builds your profile and powers recommendations instantly.</p>
+            </div>
+            <div class="pitch-card">
+              <svg class="pitch-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16"></rect><path d="M8 8h8v8H8z"></path></svg>
+              <strong>Live Lobby</strong>
+              <p class="muted">Create rooms, publish them, and bring friends into the same session.</p>
+            </div>
+            <div class="pitch-card">
+              <svg class="pitch-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18l5-6 4 3 7-9"></path><path d="M4 20h16"></path></svg>
+              <strong>Shared Insights</strong>
+              <p class="muted">Compare compatibility and discover mutual tracks together.</p>
+            </div>
+          </div>
+        </section>
+
         <div class="panel auth-banner">
           <div id="auth-status-content"><span class="muted">Checking Spotify connection...</span></div>
           <div class="sync-row">
@@ -535,12 +636,13 @@
               <button id="account-register">Create</button>
               <button id="account-login">Log In</button>
               <button id="account-logout">Log Out</button>
+              <div id="google-signin" style="margin-top:8px;"></div>
             </div>
           </div>
-          <div id="account-status" class="helper-note muted">Create or log in to save your Spotify profile cache.</div>
+          <div id="account-status" class="helper-note muted">Create a free account. We only use this for access and saved profile data.</div>
         </section>
 
-        <div class="panel">
+        <div class="panel" data-requires-account="true">
           <button id="login">Connect Spotify</button>
           <button id="refresh">Sync</button>
           <div class="mode-switch">
@@ -563,17 +665,17 @@
           </div>
         </div>
 
-        <section class="panel">
+        <section class="panel" data-requires-account="true">
           <h2>Taste Profile</h2>
           <div id="profile"></div>
         </section>
 
-        <section class="panel">
+        <section class="panel" data-requires-account="true">
           <h2>Model Insights</h2>
           <div id="model-insights"><p class="muted">Insights appear after a successful sync.</p></div>
         </section>
 
-        <section class="panel">
+        <section class="panel" data-requires-account="true">
           <h2>Recommendations</h2>
           <div class="rec-layout">
             <div id="recommendations"></div>
@@ -582,7 +684,7 @@
         </section>
       </div>
 
-      <div id="screen-lobby" class="screen">
+      <div id="screen-lobby" class="screen" data-requires-account="true">
         <section class="panel">
           <h2>Lobby</h2>
           <p class="muted">Jam out with friends.</p>
@@ -598,6 +700,7 @@
             </label>
             <div>
               <button id="join-room">Join Room</button>
+              <button id="open-room">Open Room</button>
               <button id="leave-room">Leave</button>
               <button id="copy-room" class="tiny-icon-btn" title="Copy room name" aria-label="Copy room name">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11"></rect><rect x="4" y="4" width="11" height="11"></rect></svg>
@@ -606,14 +709,24 @@
             </div>
           </div>
           <div class="share-row">
-            <input id="room-share-url" readonly value="Join a room to generate a share URL" />
-            <select id="share-action">
-              <option value="copy_link">Share Link</option>
-            </select>
-            <button id="share-room">Share</button>
+            <div class="field-with-action">
+              <input id="room-share-url" readonly value="Join a room to generate a share URL" />
+              <button id="copy-room-link-inline" class="tiny-icon-btn inside-action" title="Copy link" aria-label="Copy link">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11"></rect><rect x="4" y="4" width="11" height="11"></rect></svg>
+              </button>
+            </div>
+            <div class="share-menu-wrap">
+              <button id="share-menu-toggle" class="tiny-icon-btn" title="Share" aria-label="Share" aria-haspopup="true" aria-expanded="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><path d="M8.6 10.8l6.8-3.6M8.6 13.2l6.8 3.6"></path></svg>
+              </button>
+              <div id="share-menu" class="share-menu hidden" role="menu">
+                <button id="share-copy-link">Copy Link</button>
+                <button id="share-email-link">Share With Email</button>
+              </div>
+            </div>
           </div>
           <div id="room-status" class="status-badge muted">Not connected to a room</div>
-          <div id="room-help" class="helper-note muted">Once connected, open the Room screen for compatibility and shared recommendations.</div>
+          <div id="room-help" class="helper-note instructions muted">Once connected, open the Room screen for compatibility and shared recommendations.</div>
           <div id="active-rooms" class="active-rooms muted">No published rooms yet.</div>
           <div>
             <button id="refresh-history">Refresh Space History</button>
@@ -622,7 +735,7 @@
         </section>
       </div>
 
-      <div id="screen-room" class="screen">
+      <div id="screen-room" class="screen" data-requires-account="true">
         <section class="panel">
           <h2>Room</h2>
           <button id="recompute-room">Recompute Compatibility</button>
@@ -656,6 +769,9 @@
       </section>
     </main>
 
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script type="module" src="/app.js"></script>
   </body>
 </html>
