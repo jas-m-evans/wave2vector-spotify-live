@@ -411,6 +411,8 @@
         padding: 0;
         display: inline-grid;
         place-items: center;
+        margin-right: 0;
+        margin-bottom: 0;
       }
       .tiny-icon-btn svg {
         width: 18px;
@@ -422,6 +424,9 @@
       }
       .field-with-action input {
         padding-right: 54px;
+      }
+      .field-with-action.dual-actions input {
+        padding-right: 98px;
       }
       .room-name-field .tiny-icon-btn.inside-action {
         position: absolute;
@@ -438,11 +443,15 @@
         height: 38px;
         margin: 0;
       }
+      .field-with-action .copy-action {
+        right: 50px;
+      }
+      .field-with-action .share-action {
+        right: 6px;
+      }
       .share-row {
         margin-top: 10px;
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 8px;
+        display: block;
       }
       .share-row input {
         width: 100%;
@@ -736,14 +745,12 @@
             </div>
           </div>
           <div class="share-row">
-            <div class="field-with-action">
+            <div class="field-with-action dual-actions share-menu-wrap">
               <input id="room-share-url" readonly value="Join a room to generate a share URL" />
-              <button id="copy-room-link-inline" class="tiny-icon-btn inside-action" title="Copy link" aria-label="Copy link">
+              <button id="copy-room-link-inline" class="tiny-icon-btn inside-action copy-action" title="Copy link" aria-label="Copy link">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11"></rect><rect x="4" y="4" width="11" height="11"></rect></svg>
               </button>
-            </div>
-            <div class="share-menu-wrap">
-              <button id="share-menu-toggle" class="tiny-icon-btn" title="Share" aria-label="Share" aria-haspopup="true" aria-expanded="false">
+              <button id="share-menu-toggle" class="tiny-icon-btn inside-action share-action" title="Share" aria-label="Share" aria-haspopup="true" aria-expanded="false">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><path d="M8.6 10.8l6.8-3.6M8.6 13.2l6.8 3.6"></path></svg>
               </button>
               <div id="share-menu" class="share-menu hidden" role="menu">

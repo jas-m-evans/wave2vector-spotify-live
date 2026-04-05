@@ -2,6 +2,7 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
+import { Redis } from "@upstash/redis";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
@@ -66,6 +67,106 @@ app.use(express.json());
 
 const stateToSession = new Map<string, string>();
 const sessions = new Map<string, SessionRecord>();
+const useRedisSessionStore = Boolean(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
+let redisSessionStore: Redis | null = null;
+if (useRedisSessionStore) {
+  try {
+    redisSessionStore = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL!,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+    });
+    // eslint-disable-next-line no-console
+    console.log("[session] Redis-backed OAuth/session store enabled.");
+  } catch {
+    redisSessionStore = null;
+  }
+}
+
+const oauthStateTtlSeconds = 60 * 10;
+const spotifySessionTtlSeconds = 60 * 60 * 24 * 30;
+
+function oauthStateKey(state: string): string {
+  return `oauth:state:${state}`;
+}
+
+function spotifySessionKey(sid: string): string {
+  return `spotify:session:${sid}`;
+}
+
+async function setOAuthState(state: string, sid: string): Promise<void> {
+  stateToSession.set(state, sid);
+  if (!redisSessionStore) {
+    return;
+  }
+  try {
+    await redisSessionStore.set(oauthStateKey(state), sid, { ex: oauthStateTtlSeconds });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn(`[session] Could not persist OAuth state: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+async function consumeOAuthState(state: string): Promise<string | null> {
+  const inMemory = stateToSession.get(state) ?? null;
+  stateToSession.delete(state);
+
+  if (!redisSessionStore) {
+    return inMemory;
+  }
+
+  try {
+    const stored = await redisSessionStore.get<string>(oauthStateKey(state));
+    await redisSessionStore.del(oauthStateKey(state));
+    if (typeof stored === "string" && stored.length) {
+      return stored;
+    }
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn(`[session] Could not consume OAuth state: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  return inMemory;
+}
+
+async function setStoredSession(session: SessionRecord): Promise<void> {
+  sessions.set(session.id, session);
+  if (!redisSessionStore) {
+    return;
+  }
+  try {
+    await redisSessionStore.set(spotifySessionKey(session.id), JSON.stringify(session), { ex: spotifySessionTtlSeconds });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn(`[session] Could not persist Spotify session: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+async function getStoredSession(sid: string): Promise<SessionRecord | null> {
+  const inMemory = sessions.get(sid);
+  if (inMemory) {
+    return inMemory;
+  }
+  if (!redisSessionStore) {
+    return null;
+  }
+  try {
+    const stored = await redisSessionStore.get<string>(spotifySessionKey(sid));
+    if (typeof stored !== "string" || !stored.length) {
+      return null;
+    }
+    const parsed = JSON.parse(stored) as SessionRecord;
+    if (!parsed?.id || parsed.id !== sid || !parsed?.tokens?.accessToken) {
+      return null;
+    }
+    sessions.set(sid, parsed);
+    return parsed;
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn(`[session] Could not load Spotify session: ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  }
+}
+
 const library = await loadLibraryFromDisk();
 type SyncPhase = "idle" | "auth" | "pull_ids" | "vectorize" | "aggregate" | "complete" | "error";
 type SyncProgressState = {
@@ -228,7 +329,7 @@ async function getActiveSession(req: express.Request): Promise<SessionRecord> {
     throw new Error("Not authenticated. Visit /auth/spotify/login.");
   }
 
-  const session = sessions.get(sid);
+  const session = await getStoredSession(sid);
   if (!session) {
     throw new Error("Session not found. Re-authenticate with Spotify.");
   }
@@ -236,7 +337,7 @@ async function getActiveSession(req: express.Request): Promise<SessionRecord> {
   const shouldRefresh = Date.now() >= session.tokens.expiresAt - 20_000;
   if (shouldRefresh) {
     session.tokens = await refreshToken(session.tokens);
-    sessions.set(session.id, session);
+    await setStoredSession(session);
   }
 
   return session;
@@ -728,7 +829,7 @@ async function refreshTasteProfileBatch(
       .slice(0, 10),
     updatedAt: session.tasteUpdatedAt,
   };
-  sessions.set(session.id, session);
+  await setStoredSession(session);
   // eslint-disable-next-line no-console
   console.log(
     `[sync] batch refresh complete sid=${session.id} dims=${session.tasteVector?.length ?? 0} cached=${vectors.length} failed=${vectorFailureCount} fallback=${fallbackUsed}`,
@@ -921,7 +1022,7 @@ app.post("/api/debug/logs", (req, res) => {
   }
 });
 
-app.get("/auth/spotify/login", (req, res) => {
+app.get("/auth/spotify/login", async (req, res) => {
   const missing = getMissingSpotifyEnv();
   if (missing.length) {
     // eslint-disable-next-line no-console
@@ -947,7 +1048,7 @@ app.get("/auth/spotify/login", (req, res) => {
     );
   }
 
-  stateToSession.set(state, sid);
+  await setOAuthState(state, sid);
   res.cookie("sid", sid, {
     httpOnly: true,
     sameSite: "lax",
@@ -983,8 +1084,7 @@ app.get("/auth/spotify/callback", async (req, res) => {
     }
 
     const sid = extractSessionId(req);
-    const expectedSid = stateToSession.get(state);
-    stateToSession.delete(state);
+    const expectedSid = await consumeOAuthState(state);
 
     // eslint-disable-next-line no-console
     console.log(`[oauth] State validation: sid=${sid ?? "none"}, expectedSid=${expectedSid ?? "none"}, match=${sid === expectedSid}`);
@@ -1006,7 +1106,7 @@ app.get("/auth/spotify/callback", async (req, res) => {
     }
 
     const session: SessionRecord = { id: sid, tokens };
-    sessions.set(sid, session);
+    await setStoredSession(session);
     const aid = extractAccountId(req);
 
     // eslint-disable-next-line no-console
@@ -1204,7 +1304,7 @@ app.post("/api/sync/bootstrap", async (req, res) => {
       });
     });
     session.bootstrapCompletedAt = Date.now();
-    sessions.set(session.id, session);
+    await setStoredSession(session);
     const account = await getActiveAccount(req);
     if (account) {
       const spotifyProfile = await fetchSpotifyProfile(session.tokens.accessToken).catch(() => undefined);
