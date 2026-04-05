@@ -597,7 +597,10 @@ function renderRecommendations(items) {
           <span class="muted">Target ${(item.similarity * 100).toFixed(1)}% | Blended ${(item.blendedScore * 100).toFixed(1)}%</span>
           ${typeof item.tasteSimilarity === "number" ? `<br /><span class="muted">Taste ${(item.tasteSimilarity * 100).toFixed(1)}%</span>` : ""}
           ${item.reasons?.length ? `<div class="chip-row">${item.reasons.map((reason) => `<span class="chip">${reason}</span>`).join("")}</div>` : ""}
-          ${item.previewUrl ? `<br /><audio controls preload="none" src="${item.previewUrl}"></audio>` : ""}
+          <br /><a href="https://open.spotify.com/track/${item.trackId}" target="_blank" rel="noopener noreferrer"><button type="button">Play on Spotify</button></a>
+          ${item.previewUrl
+    ? `<br /><audio controls preload="none" src="${item.previewUrl}"></audio><br /><span class="muted" style="font-size:0.8rem;">Preview clip (usually up to 30s)</span>`
+    : `<br /><span class="muted" style="font-size:0.8rem;">No inline preview available for this track.</span>`}
         </div>
       </div>
     `,
