@@ -550,12 +550,14 @@ function renderAccountStatus(payload) {
   }
   if (!payload?.authenticated || !payload?.account) {
     currentAccount = null;
+    accountLogoutBtn?.classList.add("hidden");
     accountStatusEl.textContent = "Register or log in to continue.";
     setGlobalAccountBanner(null);
     setFeatureGate(true);
     return;
   }
   currentAccount = payload.account;
+  accountLogoutBtn?.classList.remove("hidden");
   const cached = payload.account.hasCachedProfile ? "cached profile ready" : "no cached profile yet";
   const name = payload.account.displayName || payload.account.username || payload.account.email;
   accountStatusEl.textContent = `Welcome ${name} (${cached})`;
