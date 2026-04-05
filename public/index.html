@@ -368,6 +368,10 @@
         gap: 8px;
         align-items: end;
       }
+      .account-grid.logged-in {
+        grid-template-columns: 1fr auto;
+        align-items: start;
+      }
       .account-grid input {
         width: 100%;
         box-sizing: border-box;
@@ -383,6 +387,14 @@
       }
       .account-actions button {
         margin: 0;
+      }
+      .account-actions.logged-in-only {
+        justify-self: end;
+        align-self: start;
+      }
+      .mode-helper {
+        margin-top: 6px;
+        font-size: 0.82rem;
       }
       .global-account-banner {
         margin-bottom: 12px;
@@ -632,7 +644,7 @@
               Password
               <input id="account-password" type="password" placeholder="at least 8 chars" />
             </label>
-            <div class="account-actions">
+            <div id="account-actions" class="account-actions">
               <button id="account-register">Register</button>
               <button id="account-login">Log In</button>
               <button id="account-logout" class="hidden">Log Out</button>
@@ -684,9 +696,10 @@
           <button id="login">Connect Spotify</button>
           <button id="refresh">Sync</button>
           <div class="mode-switch">
-            <button id="mode-live" class="active">Live Stream Mode</button>
-            <button id="mode-batch">Batch Stream Mode</button>
+            <button id="mode-live" class="active">Live Recommendations</button>
+            <button id="mode-batch">Profile Recommendations</button>
           </div>
+          <div class="mode-helper muted">These modes only affect Home recommendations. Room compatibility uses shared room state.</div>
           <div class="control-grid">
             <label>
               Diversity <span id="diversity-value">0.20</span>

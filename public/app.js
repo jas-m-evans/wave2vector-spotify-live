@@ -50,6 +50,7 @@ const accountRegisterBtn = document.getElementById("account-register");
 const accountLoginBtn = document.getElementById("account-login");
 const accountLogoutBtn = document.getElementById("account-logout");
 const accountPanelTitleEl = document.getElementById("account-panel-title");
+const accountActionsEl = document.getElementById("account-actions");
 const accountStatusEl = document.getElementById("account-status");
 const accountGateEl = document.getElementById("account-gate");
 const globalAccountBannerEl = document.getElementById("global-account-banner");
@@ -377,9 +378,9 @@ function setStreamMode(nextMode) {
   modeLiveBtn?.classList.toggle("active", streamMode === "live");
   modeBatchBtn?.classList.toggle("active", streamMode === "batch");
   if (streamMode === "batch") {
-    setSyncStatus("Batch mode active: recommendations come from your persisted taste profile.");
+    setSyncStatus("Profile recommendations mode: using your persisted taste profile (Home screen only).");
   } else {
-    setSyncStatus("Live mode active: recommendations blend now-playing with your taste profile.");
+    setSyncStatus("Live recommendations mode: blending now-playing with your taste profile (Home screen only).");
   }
 }
 
@@ -548,10 +549,13 @@ function renderAuthStatus(profile) {
 }
 
 function setAccountAuthControlsVisible(isVisible) {
+  const accountGridEl = accountEmailInput?.closest(".account-grid");
   accountEmailInput?.closest("label")?.classList.toggle("hidden", !isVisible);
   accountPasswordInput?.closest("label")?.classList.toggle("hidden", !isVisible);
   accountRegisterBtn?.classList.toggle("hidden", !isVisible);
   accountLoginBtn?.classList.toggle("hidden", !isVisible);
+  accountGridEl?.classList.toggle("logged-in", !isVisible);
+  accountActionsEl?.classList.toggle("logged-in-only", !isVisible);
   if (accountPanelTitleEl) {
     accountPanelTitleEl.textContent = isVisible ? "Log In or Register" : "Account";
   }
