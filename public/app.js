@@ -49,6 +49,7 @@ const accountPasswordInput = document.getElementById("account-password");
 const accountRegisterBtn = document.getElementById("account-register");
 const accountLoginBtn = document.getElementById("account-login");
 const accountLogoutBtn = document.getElementById("account-logout");
+const accountPanelTitleEl = document.getElementById("account-panel-title");
 const accountStatusEl = document.getElementById("account-status");
 const accountGateEl = document.getElementById("account-gate");
 const globalAccountBannerEl = document.getElementById("global-account-banner");
@@ -518,6 +519,7 @@ function renderAuthStatus(profile) {
 
   if (!profile?.authenticated) {
     isAuthenticated = false;
+    loginBtn?.classList.remove("hidden");
     authStatusEl.innerHTML = `
       <span class="muted">Not connected to Spotify.</span>
     `;
@@ -538,9 +540,20 @@ function renderAuthStatus(profile) {
   `;
 
   isAuthenticated = true;
+  loginBtn?.classList.add("hidden");
   spotifyDisplayName = profile.displayName ?? "";
   if (!participantNameInput.value.trim() || participantNameInput.value.trim().toLowerCase() === "alex") {
     participantNameInput.value = spotifyDisplayName;
+  }
+}
+
+function setAccountAuthControlsVisible(isVisible) {
+  accountEmailInput?.closest("label")?.classList.toggle("hidden", !isVisible);
+  accountPasswordInput?.closest("label")?.classList.toggle("hidden", !isVisible);
+  accountRegisterBtn?.classList.toggle("hidden", !isVisible);
+  accountLoginBtn?.classList.toggle("hidden", !isVisible);
+  if (accountPanelTitleEl) {
+    accountPanelTitleEl.textContent = isVisible ? "Log In or Register" : "Account";
   }
 }
 
@@ -550,6 +563,7 @@ function renderAccountStatus(payload) {
   }
   if (!payload?.authenticated || !payload?.account) {
     currentAccount = null;
+    setAccountAuthControlsVisible(true);
     accountLogoutBtn?.classList.add("hidden");
     accountStatusEl.textContent = "Register or log in to continue.";
     setGlobalAccountBanner(null);
@@ -557,6 +571,7 @@ function renderAccountStatus(payload) {
     return;
   }
   currentAccount = payload.account;
+  setAccountAuthControlsVisible(false);
   accountLogoutBtn?.classList.remove("hidden");
   const cached = payload.account.hasCachedProfile ? "cached profile ready" : "no cached profile yet";
   const name = payload.account.displayName || payload.account.username || payload.account.email;
