@@ -1,6 +1,7 @@
 import { Room, RoomEvent } from "https://esm.sh/livekit-client@2.15.3";
 
 const debugEl = document.getElementById("debug");
+const demoMode = window.location.pathname.startsWith("/demo");
 const recEl = document.getElementById("recommendations");
 const profileEl = document.getElementById("profile");
 const diversityInput = document.getElementById("diversity");
@@ -37,6 +38,14 @@ const roomHistoryEl = document.getElementById("room-history");
 const roomStatusEl = document.getElementById("room-status");
 const roomHelpEl = document.getElementById("room-help");
 const roomIntroEl = document.getElementById("room-intro");
+const roomWelcomeEl = document.getElementById("room-welcome");
+const roomPresenceBadgesEl = document.getElementById("room-presence-badges");
+const roomTasteSignalsEl = document.getElementById("room-taste-signals");
+const roomSignalBarsEl = document.getElementById("room-signal-bars");
+const roomTasteSummaryEl = document.getElementById("room-taste-summary");
+const demoActiveRoomsEl = document.getElementById("demo-active-rooms");
+const demoConnectedUsersEl = document.getElementById("demo-connected-users");
+const demoReadyProfilesEl = document.getElementById("demo-ready-profiles");
 const activeRoomsEl = document.getElementById("active-rooms");
 const participantListEl = document.getElementById("participant-list");
 const compatibilityEl = document.getElementById("compatibility");
@@ -52,8 +61,10 @@ const accountLogoutBtn = document.getElementById("account-logout");
 const accountPanelTitleEl = document.getElementById("account-panel-title");
 const accountActionsEl = document.getElementById("account-actions");
 const accountStatusEl = document.getElementById("account-status");
+const accountPanelEl = document.getElementById("account-panel");
 const accountGateEl = document.getElementById("account-gate");
 const globalAccountBannerEl = document.getElementById("global-account-banner");
+const demoBannerEl = document.getElementById("demo-banner");
 const homeViewBtn = document.getElementById("view-home");
 const lobbyViewBtn = document.getElementById("view-lobby");
 const homeScreenEl = document.getElementById("screen-home");
@@ -70,6 +81,8 @@ let lastRoomParticipants = 0;
 let streamMode = "live";
 let roomHistory = [];
 let currentAccount = null;
+let latestModelInsights = null;
+let previousParticipantNames = new Set();
 let localSharedState = {
   tasteProfile: null,
   nowPlayingState: null,
@@ -181,6 +194,15 @@ function setActiveScreen(screen) {
 }
 
 function setFeatureGate(locked) {
+  if (demoMode) {
+    document.querySelectorAll("[data-requires-account='true']").forEach((element) => {
+      element.classList.remove("hidden");
+    });
+    if (lobbyViewBtn) {
+      lobbyViewBtn.classList.remove("hidden");
+    }
+    return;
+  }
   document.querySelectorAll("[data-requires-account='true']").forEach((element) => {
     element.classList.toggle("hidden", locked);
   });
@@ -195,6 +217,11 @@ function setFeatureGate(locked) {
 
 function setGlobalAccountBanner(account) {
   if (!globalAccountBannerEl) {
+    return;
+  }
+  if (demoMode) {
+    globalAccountBannerEl.textContent = "Demo mode: Spotify-only auth";
+    globalAccountBannerEl.classList.add("welcome");
     return;
   }
   if (!account) {
@@ -330,9 +357,12 @@ function setRoomHelp(text) {
 }
 
 function setRoomIntro(participantCount = 0) {
-  if (!roomIntroEl) {
+  if (!roomIntroEl || !roomWelcomeEl) {
     return;
   }
+  const displayName = (spotifyDisplayName || currentAccount?.displayName || currentAccount?.email || participantNameInput.value.trim() || "there").trim();
+  roomWelcomeEl.textContent = `Welcome ${displayName}`;
+
   const signals = localSharedState?.tasteProfile?.topSignals;
   const highlightText = Array.isArray(signals) && signals.length
     ? signals.slice(0, 3).join(", ")
@@ -342,6 +372,93 @@ function setRoomIntro(participantCount = 0) {
     return;
   }
   roomIntroEl.textContent = `This is your shared space. Your taste anchors (${highlightText}) are now blending with your friend's profile for compatibility and mutual picks.`;
+}
+
+function renderRoomPresenceBadges(participants = []) {
+  if (!roomPresenceBadgesEl) {
+    return;
+  }
+
+  const me = (activeParticipantName || participantNameInput.value.trim() || spotifyDisplayName || "You").trim();
+  if (!participants.length) {
+    roomPresenceBadgesEl.innerHTML = `<span class="presence-badge you online">${me} (you)</span>`;
+    return;
+  }
+
+  roomPresenceBadgesEl.innerHTML = participants
+    .slice(0, 8)
+    .map((participant) => {
+      const isYou = participant.participantName === activeParticipantName;
+      const classes = ["presence-badge", participant.connected ? "online" : "offline", isYou ? "you" : ""]
+        .filter(Boolean)
+        .join(" ");
+      const label = isYou ? `${participant.participantName} (you)` : participant.participantName;
+      return `<span class="${classes}">${label}</span>`;
+    })
+    .join("");
+}
+
+function renderRoomTasteSnapshot() {
+  if (!roomTasteSignalsEl || !roomTasteSummaryEl) {
+    return;
+  }
+
+  const localSignals = Array.isArray(localSharedState?.tasteProfile?.topSignals)
+    ? localSharedState.tasteProfile.topSignals
+    : [];
+
+  const featureSignals = Array.isArray(latestModelInsights?.topFeatures)
+    ? latestModelInsights.topFeatures
+      .filter((entry) => Number(entry?.value ?? 0) > 0)
+      .sort((a, b) => Number(b.value ?? 0) - Number(a.value ?? 0))
+      .slice(0, 3)
+      .map((entry) => entry.feature)
+    : [];
+
+  const topGenres = Array.isArray(latestModelInsights?.topGenres)
+    ? latestModelInsights.topGenres.slice(0, 3).map((entry) => entry.genre)
+    : [];
+
+  const topArtists = Array.isArray(latestModelInsights?.topArtists)
+    ? latestModelInsights.topArtists.slice(0, 3).map((entry) => entry.name)
+    : [];
+
+  const signals = [...new Set([...localSignals, ...featureSignals, ...topGenres])].slice(0, 6);
+
+  if (!signals.length && !topArtists.length) {
+    roomTasteSignalsEl.innerHTML = `<span class="muted">No taste signals yet. Sync and generate recommendations once to hydrate this view.</span>`;
+    if (roomSignalBarsEl) {
+      roomSignalBarsEl.innerHTML = "";
+    }
+    roomTasteSummaryEl.textContent = "Your room personality appears here after your first successful sync/recommendation pass.";
+    return;
+  }
+
+  const signalPills = signals.map((signal) => `<span class="taste-pill">${signal}</span>`).join("");
+  const artistPills = topArtists.map((artist) => `<span class="taste-pill">${artist}</span>`).join("");
+  roomTasteSignalsEl.innerHTML = `${signalPills}${artistPills}`;
+
+  if (roomSignalBarsEl) {
+    const barSource = Array.isArray(latestModelInsights?.topFeatures)
+      ? latestModelInsights.topFeatures.slice(0, 6)
+      : [];
+    if (!barSource.length) {
+      roomSignalBarsEl.innerHTML = "";
+    } else {
+      roomSignalBarsEl.innerHTML = barSource
+        .map((entry, idx) => {
+          const value = Math.max(0.08, Math.min(1, Number(entry.value ?? 0)));
+          const height = Math.round(18 + value * 62);
+          const label = String(entry.feature ?? "signal").slice(0, 10);
+          return `<div><div class="signal-bar" style="--h:${height}px;--d:${(idx * 0.12).toFixed(2)}s"></div><span class="signal-bar-label">${label}</span></div>`;
+        })
+        .join("");
+    }
+  }
+
+  const artistsText = topArtists.length ? ` Top artists: ${topArtists.join(", ")}.` : "";
+  const signalsText = signals.length ? `You lean toward ${signals.slice(0, 3).join(", ")}.` : "";
+  roomTasteSummaryEl.textContent = `${signalsText}${artistsText}`.trim();
 }
 
 function getShareRoomUrl(roomName) {
@@ -461,22 +578,31 @@ async function loadRoomHistory() {
 }
 
 function renderActiveRooms(rooms) {
+  if (demoActiveRoomsEl && demoConnectedUsersEl && demoReadyProfilesEl) {
+    const roomCount = rooms?.length ?? 0;
+    const connected = (rooms ?? []).reduce((sum, room) => sum + Number(room.connectedCount ?? 0), 0);
+    const ready = (rooms ?? []).reduce((sum, room) => sum + Number(room.tasteReadyCount ?? 0), 0);
+    demoActiveRoomsEl.textContent = String(roomCount);
+    demoConnectedUsersEl.textContent = String(connected);
+    demoReadyProfilesEl.textContent = String(ready);
+  }
+
   if (!activeRoomsEl) {
     return;
   }
   if (!rooms?.length) {
-    activeRoomsEl.innerHTML = `<span class="muted">No shared rooms visible yet. Ask your friend to send you their room link.</span>`;
+    activeRoomsEl.innerHTML = `<span class="muted">No active rooms yet. Create one now or ask a friend for their room link.</span>`;
     return;
   }
 
   activeRoomsEl.innerHTML = rooms
-    .map((room) => `
-      <div class="room-list-item">
+    .map((room, idx) => `
+      <div class="room-list-item" style="animation-delay:${(idx * 40)}ms;">
         <div>
           <strong>${room.roomName}</strong><br />
           <span class="muted">connected: ${room.connectedCount} | taste-ready: ${room.tasteReadyCount}</span>
         </div>
-        <button type="button" data-join-room="${room.roomName}">Join Shared Room</button>
+        <button type="button" data-join-room="${room.roomName}">Join Room</button>
       </div>
     `)
     .join("");
@@ -765,6 +891,9 @@ function renderProjectionMap(map) {
 }
 
 function renderModelInsights(insights) {
+  latestModelInsights = insights ?? null;
+  renderRoomTasteSnapshot();
+
   if (!modelInsightsEl) {
     return;
   }
@@ -833,8 +962,12 @@ function renderParticipants(room) {
   const participants = room?.participants ?? [];
   lastRoomParticipants = participants.filter((participant) => participant.connected).length;
   setRoomIntro(lastRoomParticipants);
+  renderRoomPresenceBadges(participants);
+
+  const currentNames = new Set(participants.map((participant) => participant.participantName));
 
   if (!participants.length) {
+    previousParticipantNames = new Set();
     participantListEl.innerHTML = `<p class="muted">No participants yet.</p>`;
     setRoomHelp("Create your room, then share your room link with one person. Compatibility and mutual picks appear after both of you are connected and synced.");
     return;
@@ -849,16 +982,24 @@ function renderParticipants(room) {
   participantListEl.innerHTML = participants
     .map((participant) => {
       const now = participant.nowPlayingState?.nowPlaying;
+      const justJoined = !previousParticipantNames.has(participant.participantName);
       return `
-        <div style="margin-bottom:8px; border-bottom:1px solid #2b3751; padding-bottom:8px;">
-          <strong>${participant.participantName}</strong>
-          <span class="muted">${participant.connected ? "connected" : "offline"}</span><br />
-          <span class="muted">Taste profile: ${participant.tasteProfile ? "shared" : "missing"}</span><br />
-          <span class="muted">Now: ${now?.name ? `${now.name} - ${now.artist ?? ""}` : "none"}</span>
+        <div class="participant-card ${participant.connected ? "online" : "offline"} ${justJoined ? "just-joined" : ""}">
+          <div class="participant-head">
+            <strong>${participant.participantName}</strong>
+            <span class="muted">${participant.connected ? "connected" : "offline"}</span>
+          </div>
+          <div class="participant-tags">
+            <span class="participant-tag">taste: ${participant.tasteProfile ? "shared" : "missing"}</span>
+            <span class="participant-tag">now: ${now?.name ? "active" : "idle"}</span>
+          </div>
+          <div class="muted" style="margin-top:6px; font-size:0.8rem;">${now?.name ? `${now.name} - ${now.artist ?? ""}` : "No track currently shared"}</div>
         </div>
       `;
     })
     .join("");
+
+  previousParticipantNames = currentNames;
 }
 
 function renderCompatibility(payload) {
@@ -1082,6 +1223,24 @@ async function bootstrapSync(force = false) {
 async function checkAuth() {
   try {
     logEvent("auth", "Checking auth state");
+
+    if (demoMode) {
+      setFeatureGate(false);
+      const res = await fetch("/api/me");
+      const profile = await res.json();
+      logEvent("auth", `Demo mode Spotify auth response ${res.status}`, profile);
+      renderAuthStatus(profile);
+
+      if (!profile.authenticated) {
+        setSyncStatus("Demo mode: connect Spotify to start recommendations and room sharing.");
+        setSyncProgress(0);
+        return;
+      }
+
+      await refresh();
+      return;
+    }
+
     const accountPayload = await checkAccountAuth();
     logEvent("auth", `Account auth payload: authenticated=${accountPayload?.authenticated}`, accountPayload);
     
@@ -1139,6 +1298,7 @@ async function refreshRoomPanels() {
 
   if (!activeRoomName) {
     setRoomIntro(0);
+    renderRoomPresenceBadges([]);
     renderParticipants(null);
     renderCompatibility(null);
     renderMutualRecommendations([]);
@@ -1194,6 +1354,13 @@ async function shareLocalStateViaBackend() {
   }
 
   localSharedState = payload.shared;
+  renderRoomTasteSnapshot();
+
+  if (payload.warnings?.length) {
+    const warning = payload.warnings.join(" | ");
+    appendSyncLog(`Room note: ${warning}`);
+    setRoomStatus(warning, false);
+  }
 
   if (localSharedState.tasteProfile) {
     await publishDataMessage({ type: "taste_profile_shared", ...localSharedState.tasteProfile });
@@ -1278,29 +1445,36 @@ async function leaveRoom() {
   activeRoomName = "";
   activeParticipantName = "";
   lastRoomParticipants = 0;
+  previousParticipantNames = new Set();
   updateShareUrlInput(roomNameInput.value.trim());
   setRoomIntro(0);
   localSharedState = { tasteProfile: null, nowPlayingState: null };
+  renderRoomTasteSnapshot();
   setRoomStatus("Not connected to a room", false);
   await refreshRoomPanels();
   logEvent("rooms", "Leave room complete", { roomName });
 }
 
 loginBtn.addEventListener("click", () => {
-  if (!currentAccount) {
+  if (!currentAccount && !demoMode) {
     setSyncStatus("Register or log in to continue.");
     logEvent("auth", "Connect Spotify blocked: no app account logged in");
     return;
   }
   logEvent("auth", "Connect Spotify button clicked");
-  logEvent("auth", `Current account: ${currentAccount.email}, id=${currentAccount.id}`);
+  if (currentAccount) {
+    logEvent("auth", `Current account: ${currentAccount.email}, id=${currentAccount.id}`);
+  } else {
+    logEvent("auth", "No app account in context (demo mode)");
+  }
   setSyncStatus("Redirecting to Spotify authorization...");
   resetSyncLog();
   appendSyncLog("Initiating Spotify OAuth flow.");
   setSyncPhaseState("auth");
   setSyncProgress(5);
-  logEvent("auth", `Redirecting to /auth/spotify/login for account ${currentAccount.email}`);
-  window.location.href = "/auth/spotify/login";
+  const loginPath = demoMode ? "/auth/spotify/login?mode=demo" : "/auth/spotify/login";
+  logEvent("auth", `Redirecting to ${loginPath}`);
+  window.location.href = loginPath;
 });
 
 refreshBtn.addEventListener("click", () => {
@@ -1533,7 +1707,7 @@ homeViewBtn?.addEventListener("click", () => {
 });
 
 lobbyViewBtn?.addEventListener("click", () => {
-  if (!currentAccount) {
+  if (!currentAccount && !demoMode) {
     setSyncStatus("Create or log in to an account first.");
     setActiveScreen("home");
     return;
@@ -1601,6 +1775,13 @@ setFeatureGate(true);
 updateShareUrlInput(roomNameInput.value.trim());
 setActiveScreen("home");
 setRoomIntro(0);
+renderRoomPresenceBadges([]);
+if (demoMode) {
+  demoBannerEl?.classList.remove("hidden");
+  accountPanelEl?.classList.add("hidden");
+  accountGateEl?.classList.add("hidden");
+  setGlobalAccountBanner(null);
+}
 loadActiveRooms().catch(() => {
   // Active room directory is optional.
 });

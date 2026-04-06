@@ -217,6 +217,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.resolve(__dirname, "../public");
 app.use(express.static(publicDir));
+app.get("/demo", (_req, res) => {
+  res.sendFile(path.join(publicDir, "index.html"));
+});
 
 const missingSpotifyEnv = getMissingSpotifyEnv();
 if (missingSpotifyEnv.length) {
@@ -321,6 +324,30 @@ async function getActiveAccount(req: express.Request) {
     return null;
   }
   return getAccountById(aid);
+}
+
+async function getRoomActor(req: express.Request): Promise<{
+  account: AppAccount | null;
+  session: SessionRecord | null;
+  cached: Partial<SessionRecord> | null;
+  sessionId: string;
+}> {
+  const account = await getActiveAccount(req);
+
+  let session: SessionRecord | null = null;
+  try {
+    session = await getActiveSession(req);
+  } catch {
+    session = null;
+  }
+
+  if (!account && !session) {
+    throw new Error("Connect Spotify to access room features.");
+  }
+
+  const cached = account ? await getCachedSessionLike(account.id) : null;
+  const sessionId = session?.id ?? (account ? `aid:${account.id}` : `spotify:${extractSessionId(req) ?? "guest"}`);
+  return { account, session, cached, sessionId };
 }
 
 async function getActiveSession(req: express.Request): Promise<SessionRecord> {
@@ -1023,6 +1050,7 @@ app.post("/api/debug/logs", (req, res) => {
 });
 
 app.get("/auth/spotify/login", async (req, res) => {
+  const mode = String(req.query.mode ?? "").toLowerCase();
   const missing = getMissingSpotifyEnv();
   if (missing.length) {
     // eslint-disable-next-line no-console
@@ -1049,6 +1077,15 @@ app.get("/auth/spotify/login", async (req, res) => {
   }
 
   await setOAuthState(state, sid);
+  if (mode === "demo") {
+    res.cookie("post_auth_redirect", "/demo", {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: cookieSecure,
+      path: "/",
+      maxAge: 1000 * 60 * 10,
+    });
+  }
   res.cookie("sid", sid, {
     httpOnly: true,
     sameSite: "lax",
@@ -1068,6 +1105,9 @@ app.get("/auth/spotify/callback", async (req, res) => {
     const requestHost = getRequestHost(req);
     const requestProto = getRequestProto(req);
     const redirectHost = getConfiguredRedirectHost();
+    const postAuthRedirect = typeof req.cookies?.post_auth_redirect === "string"
+      ? req.cookies.post_auth_redirect
+      : "/";
     // eslint-disable-next-line no-console
     console.log(
       `[oauth] Callback received: state=${state}, code=${code ? "yes" : "no"}, request=${requestProto}://${requestHost ?? "unknown"}, redirectHost=${redirectHost ?? "missing"}`,
@@ -1137,8 +1177,15 @@ app.get("/auth/spotify/callback", async (req, res) => {
     }
 
     // eslint-disable-next-line no-console
-    console.log(`[oauth] Callback complete, redirecting to /`);
-    return res.redirect("/");
+    res.clearCookie("post_auth_redirect", {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: cookieSecure,
+      path: "/",
+    });
+    // eslint-disable-next-line no-console
+    console.log(`[oauth] Callback complete, redirecting to ${postAuthRedirect}`);
+    return res.redirect(postAuthRedirect === "/demo" ? "/demo" : "/");
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     // eslint-disable-next-line no-console
@@ -1361,61 +1408,73 @@ app.get("/api/sync/progress", async (req, res) => {
 
 app.post("/api/livekit/token", async (req, res) => {
   try {
-    const session = await getActiveSession(req);
+    const actor = await getRoomActor(req);
     const body = liveKitTokenBodySchema.parse(req.body);
     const tokenPayload = await createLiveKitAccessToken({
       roomName: body.roomName,
       participantName: body.participantName,
-      sessionId: session.id,
+      sessionId: actor.sessionId,
     });
 
     await markParticipantJoined({
       roomName: tokenPayload.roomName,
       participantName: tokenPayload.participantName,
-      sessionId: session.id,
+      sessionId: actor.sessionId,
     });
 
     return res.json(tokenPayload);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    return res.status(400).json({ error: message });
+    return res.status(401).json({ error: message });
   }
 });
 
 app.post("/api/rooms/:roomName/share-state", async (req, res) => {
   try {
-    const session = await getActiveSession(req);
-    session.streamModePreference = "live";
+    const actor = await getRoomActor(req);
+    const session = actor.session;
+    const cached = actor.cached;
+    if (session) {
+      session.streamModePreference = "live";
+      await setStoredSession(session);
+    }
     const roomName = cleanRoomName(req.params.roomName);
     const body = roomShareBodySchema.parse(req.body);
 
     await markParticipantJoined({
       roomName,
       participantName: body.participantName,
-      sessionId: session.id,
+      sessionId: actor.sessionId,
     });
     await startLiveStream({
       roomName,
-      sessionId: session.id,
+      sessionId: actor.sessionId,
       participantName: body.participantName,
     });
 
+    const tasteVector = session?.tasteVector?.length
+      ? session.tasteVector
+      : cached?.tasteVector?.length
+        ? cached.tasteVector
+        : null;
+    const tasteUpdatedAt = session?.tasteUpdatedAt ?? cached?.tasteUpdatedAt;
+
     let tasteProfile = null;
-    if (session.tasteVector && session.tasteVector.length) {
+    if (tasteVector && tasteVector.length) {
       tasteProfile = {
         roomName,
         participantName: body.participantName,
         timestamp: Date.now(),
-        tasteVector: session.tasteVector,
-        tasteUpdatedAt: session.tasteUpdatedAt,
-        topSignals: topTasteSignals(session.tasteVector),
+        tasteVector,
+        tasteUpdatedAt,
+        topSignals: topTasteSignals(tasteVector),
         profileStats: {
-          dims: session.tasteVector.length,
+          dims: tasteVector.length,
         },
       };
       await shareTasteProfile({
         roomName,
-        sessionId: session.id,
+        sessionId: actor.sessionId,
         participantName: body.participantName,
         profile: tasteProfile,
       });
@@ -1423,7 +1482,7 @@ app.post("/api/rooms/:roomName/share-state", async (req, res) => {
 
     const includeNowPlaying = body.includeNowPlaying ?? true;
     let nowPlayingState = null;
-    if (includeNowPlaying) {
+    if (includeNowPlaying && session) {
       const nowPlaying = await fetchNowPlaying(session.tokens.accessToken);
       let vector: number[] | undefined;
       if (nowPlaying.trackId) {
@@ -1440,7 +1499,7 @@ app.post("/api/rooms/:roomName/share-state", async (req, res) => {
 
       await shareNowPlaying({
         roomName,
-        sessionId: session.id,
+        sessionId: actor.sessionId,
         participantName: body.participantName,
         nowPlayingState,
       });
@@ -1455,6 +1514,7 @@ app.post("/api/rooms/:roomName/share-state", async (req, res) => {
         tasteProfile,
         nowPlayingState,
       },
+      warnings: session ? [] : ["Spotify live session not active; shared room state uses cached taste profile only."],
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -1464,10 +1524,10 @@ app.post("/api/rooms/:roomName/share-state", async (req, res) => {
 
 app.post("/api/rooms/:roomName/leave", async (req, res) => {
   try {
-    const session = await getActiveSession(req);
+    const actor = await getRoomActor(req);
     const roomName = cleanRoomName(req.params.roomName);
-    await endLiveStream({ roomName, sessionId: session.id });
-    await markParticipantLeft({ roomName, sessionId: session.id });
+    await endLiveStream({ roomName, sessionId: actor.sessionId });
+    await markParticipantLeft({ roomName, sessionId: actor.sessionId });
     const snapshot = await recordBatchSnapshot(roomName, "stream_end");
     const room = await getRoomSnapshot(roomName);
     return res.json({ room, snapshot });
@@ -1479,7 +1539,7 @@ app.post("/api/rooms/:roomName/leave", async (req, res) => {
 
 app.post("/api/rooms/:roomName/publish", async (req, res) => {
   try {
-    await getActiveSession(req);
+    await getRoomActor(req);
     const roomName = cleanRoomName(req.params.roomName);
     const body = roomPublishBodySchema.parse(req.body);
     const room = await setRoomPublished(roomName, body.published);
@@ -1496,7 +1556,7 @@ app.post("/api/rooms/:roomName/publish", async (req, res) => {
 
 app.get("/api/rooms/active", async (req, res) => {
   try {
-    await getActiveSession(req);
+    await getRoomActor(req);
     const limit = Math.max(1, Math.min(30, Number(req.query.limit ?? 20)));
     const rooms = await listActiveRooms(limit);
     return res.json({ rooms });
@@ -1508,7 +1568,7 @@ app.get("/api/rooms/active", async (req, res) => {
 
 app.get("/api/rooms/:roomName/history", async (req, res) => {
   try {
-    await getActiveSession(req);
+    await getRoomActor(req);
     const roomName = cleanRoomName(req.params.roomName);
     const limit = Math.max(1, Math.min(40, Number(req.query.limit ?? 20)));
     const snapshots = await getRoomBatchHistory(roomName, limit);
@@ -1521,7 +1581,7 @@ app.get("/api/rooms/:roomName/history", async (req, res) => {
 
 app.post("/api/rooms/:roomName/resume", async (req, res) => {
   try {
-    await getActiveSession(req);
+    await getRoomActor(req);
     const roomName = cleanRoomName(req.params.roomName);
     const body = roomResumeBodySchema.parse(req.body ?? {});
     const result = await resumeRoomFromBatchSnapshot(roomName, body.snapshotId);
@@ -1540,7 +1600,7 @@ app.post("/api/rooms/:roomName/resume", async (req, res) => {
 
 app.get("/api/rooms/:roomName/state", async (req, res) => {
   try {
-    await getActiveSession(req);
+    await getRoomActor(req);
     const roomName = cleanRoomName(req.params.roomName);
     const room = await getRoomSnapshot(roomName);
     return res.json({ room });
@@ -1552,7 +1612,7 @@ app.get("/api/rooms/:roomName/state", async (req, res) => {
 
 app.get("/api/rooms/:roomName/compatibility", async (req, res) => {
   try {
-    await getActiveSession(req);
+    await getRoomActor(req);
     const roomName = cleanRoomName(req.params.roomName);
     await recomputeRoomAnalytics(roomName);
     const room = await getRoomSnapshot(roomName);
@@ -1585,7 +1645,7 @@ app.get("/api/rooms/:roomName/compatibility", async (req, res) => {
 
 app.get("/api/rooms/:roomName/mutual-recommendations", async (req, res) => {
   try {
-    await getActiveSession(req);
+    await getRoomActor(req);
     const roomName = cleanRoomName(req.params.roomName);
     const k = Math.max(1, Number(req.query.k ?? 10));
 

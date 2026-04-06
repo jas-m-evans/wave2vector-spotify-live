@@ -370,7 +370,7 @@ export async function listActiveRooms(limit = 20): Promise<Array<{
 }>> {
   await ensureLoaded();
   return [...rooms.values()]
-    .filter((room) => room.published)
+    .filter((room) => room.participants.some((participant) => participant.connected))
     .map((room) => {
       const connected = room.participants.filter((participant) => participant.connected);
       const tasteReady = connected.filter((participant) => participant.tasteProfile);
