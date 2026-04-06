@@ -1415,6 +1415,19 @@ function hasTasteProfileReady() {
   return byInsights || byProfileText;
 }
 
+async function fetchTasteProfileReadyFromBackend() {
+  try {
+    const res = await fetch("/api/recommendations/live?mode=batch&k=1");
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return false;
+    }
+    return Boolean(payload?.profile?.hasTasteVector) || Number(payload?.profile?.dims ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
 async function ensureTasteProfileReady() {
   if (hasTasteProfileReady()) {
     return true;
@@ -1427,13 +1440,26 @@ async function ensureTasteProfileReady() {
   }
 
   setRoomStatus("Preparing your Spotify taste profile for room sharing...", false);
+  let bootstrapPayload = null;
   try {
-    await bootstrapSync(false);
+    bootstrapPayload = await bootstrapSync(false);
   } catch {
     // Refresh may still recover from cached profile even if bootstrap fails.
   }
+
+  if (bootstrapPayload?.hasTasteVector || Number(bootstrapPayload?.dims ?? 0) > 0) {
+    return true;
+  }
+
+  if (await fetchTasteProfileReadyFromBackend()) {
+    return true;
+  }
+
   await refresh().catch(() => {});
-  return hasTasteProfileReady();
+  if (hasTasteProfileReady()) {
+    return true;
+  }
+  return fetchTasteProfileReadyFromBackend();
 }
 
 async function joinRoom() {
@@ -1447,9 +1473,8 @@ async function joinRoom() {
 
   const tasteReady = await ensureTasteProfileReady();
   if (!tasteReady) {
-    setRoomStatus("Taste profile not ready yet. Click Sync and wait for your Spotify profile to hydrate.");
-    appendSyncLog("Join blocked: taste profile not ready.");
-    return;
+    setRoomStatus("Joining now. Your taste profile is still hydrating and will improve shared compatibility shortly.", false);
+    appendSyncLog("Taste profile not fully ready yet; joining room anyway.");
   }
 
   localStorage.setItem("roomName", roomName);
