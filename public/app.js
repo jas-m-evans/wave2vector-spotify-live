@@ -1546,6 +1546,28 @@ loginBtn.addEventListener("click", () => {
   window.location.href = loginPath;
 });
 
+spotifyBadgeEl?.addEventListener("click", () => {
+  if (!currentAccount && !demoMode) {
+    setSyncStatus("Register or log in to continue.");
+    logEvent("auth", "Connect Spotify blocked: no app account logged in");
+    return;
+  }
+  logEvent("auth", "Spotify badge clicked");
+  if (currentAccount) {
+    logEvent("auth", `Current account: ${currentAccount.email}, id=${currentAccount.id}`);
+  } else {
+    logEvent("auth", "No app account in context (demo mode)");
+  }
+  setSyncStatus("Redirecting to Spotify authorization...");
+  resetSyncLog();
+  appendSyncLog("Initiating Spotify OAuth flow.");
+  setSyncPhaseState("auth");
+  setSyncProgress(5);
+  const loginPath = demoMode ? "/auth/spotify/login?mode=demo" : "/auth/spotify/login";
+  logEvent("auth", `Redirecting to ${loginPath}`);
+  window.location.href = loginPath;
+});
+
 refreshBtn.addEventListener("click", () => {
   logEvent("sync", "Manual sync requested");
   bootstrapSync(true)
