@@ -212,10 +212,7 @@ function setFeatureGate(locked) {
   });
   accountGateEl?.classList.toggle("hidden", !locked);
   if (lobbyViewBtn) {
-    lobbyViewBtn.classList.toggle("hidden", locked);
-  }
-  if (locked) {
-    setActiveScreen("home");
+    lobbyViewBtn.classList.remove("hidden");
   }
 }
 
