@@ -1286,33 +1286,32 @@ async function checkAuth() {
 
     const accountPayload = await checkAccountAuth();
     logEvent("auth", `Account auth payload: authenticated=${accountPayload?.authenticated}`, accountPayload);
-    
-    if (!accountPayload?.authenticated) {
-      logEvent("auth", "User not logged into app account, rendering unauthenticated state");
-      renderAuthStatus({ authenticated: false });
-      setSyncStatus("Register or log in to continue.");
-      setSyncProgress(0);
-      return;
-    }
 
-    logEvent("auth", `User logged into app account: ${accountPayload.account?.email}`);
+    // Always check Spotify regardless of app account status — Spotify connectivity is prioritized for demo.
     const res = await fetch("/api/me");
     const profile = await res.json();
     logEvent("auth", `Spotify auth response ${res.status}`, profile);
     renderAuthStatus(profile);
 
     if (!profile.authenticated) {
-      logEvent("auth", "Spotify not connected, using cached profile");
-      recEl.innerHTML = `<p class="muted">Loading your saved profile recommendations...</p>`;
-      profileEl.innerHTML = `<p class="muted">Spotify disconnected. Using your cached account profile if available.</p>`;
-      setSyncStatus("Spotify not connected. Batch cache mode active when available.");
-      setSyncProgress(0);
-      appendSyncLog("Waiting for authentication.");
-      await refresh();
+      if (!accountPayload?.authenticated) {
+        logEvent("auth", "No app account and no Spotify session");
+        setSyncStatus("Connect Spotify to get started.");
+        setSyncProgress(0);
+      } else {
+        logEvent("auth", "Spotify not connected, using cached profile");
+        recEl.innerHTML = `<p class="muted">Loading your saved profile recommendations...</p>`;
+        profileEl.innerHTML = `<p class="muted">Spotify disconnected. Using your cached account profile if available.</p>`;
+        setSyncStatus("Spotify not connected. Batch cache mode active when available.");
+        setSyncProgress(0);
+        appendSyncLog("Waiting for authentication.");
+        await refresh();
+      }
       return;
     }
 
-    logEvent("auth", "Spotify connected, checking for cached profile");
+    // Spotify is connected — proceed with full flow regardless of app account.
+    logEvent("auth", `Spotify connected${accountPayload?.authenticated ? `, app account: ${accountPayload.account?.email}` : ", no app account (Spotify-only)"}`);
     if (accountPayload?.account?.hasCachedProfile) {
       appendSyncLog("Using cached account profile. Skipping auto-bootstrap.");
       logEvent("auth", "Using cached profile, skipping bootstrap");
@@ -1525,16 +1524,11 @@ async function leaveRoom() {
 }
 
 loginBtn.addEventListener("click", () => {
-  if (!currentAccount && !demoMode) {
-    setSyncStatus("Register or log in to continue.");
-    logEvent("auth", "Connect Spotify blocked: no app account logged in");
-    return;
-  }
   logEvent("auth", "Connect Spotify button clicked");
   if (currentAccount) {
     logEvent("auth", `Current account: ${currentAccount.email}, id=${currentAccount.id}`);
   } else {
-    logEvent("auth", "No app account in context (demo mode)");
+    logEvent("auth", "No app account — Spotify-only flow");
   }
   setSyncStatus("Redirecting to Spotify authorization...");
   resetSyncLog();
@@ -1547,16 +1541,11 @@ loginBtn.addEventListener("click", () => {
 });
 
 spotifyBadgeEl?.addEventListener("click", () => {
-  if (!currentAccount && !demoMode) {
-    setSyncStatus("Register or log in to continue.");
-    logEvent("auth", "Connect Spotify blocked: no app account logged in");
-    return;
-  }
   logEvent("auth", "Spotify badge clicked");
   if (currentAccount) {
     logEvent("auth", `Current account: ${currentAccount.email}, id=${currentAccount.id}`);
   } else {
-    logEvent("auth", "No app account in context (demo mode)");
+    logEvent("auth", "No app account — Spotify-only flow");
   }
   setSyncStatus("Redirecting to Spotify authorization...");
   resetSyncLog();
