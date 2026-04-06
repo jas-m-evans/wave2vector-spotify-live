@@ -37,6 +37,7 @@ const refreshHistoryBtn = document.getElementById("refresh-history");
 const roomHistoryEl = document.getElementById("room-history");
 const roomStatusEl = document.getElementById("room-status");
 const roomHelpEl = document.getElementById("room-help");
+const roomInlineStatusEl = document.getElementById("room-inline-status");
 const roomIntroEl = document.getElementById("room-intro");
 const roomWelcomeEl = document.getElementById("room-welcome");
 const roomPresenceBadgesEl = document.getElementById("room-presence-badges");
@@ -347,6 +348,10 @@ function updateControlLabels() {
 function setRoomStatus(text, isActive = false) {
   roomStatusEl.textContent = text;
   roomStatusEl.classList.toggle("muted", !isActive);
+  if (roomInlineStatusEl) {
+    roomInlineStatusEl.textContent = text;
+    roomInlineStatusEl.classList.toggle("muted", !isActive);
+  }
 }
 
 function setRoomHelp(text) {
@@ -362,6 +367,11 @@ function setRoomIntro(participantCount = 0) {
   }
   const displayName = (spotifyDisplayName || currentAccount?.displayName || currentAccount?.email || participantNameInput.value.trim() || "there").trim();
   roomWelcomeEl.textContent = `Welcome ${displayName}`;
+
+  if (!activeRoomName) {
+    roomIntroEl.textContent = "You are viewing your room dashboard, but you are not connected to a room yet. Go to Lobby to create/join one, then come back here to recompute.";
+    return;
+  }
 
   const signals = localSharedState?.tasteProfile?.topSignals;
   const highlightText = Array.isArray(signals) && signals.length
@@ -380,6 +390,10 @@ function renderRoomPresenceBadges(participants = []) {
   }
 
   const me = (activeParticipantName || participantNameInput.value.trim() || spotifyDisplayName || "You").trim();
+  if (!activeRoomName) {
+    roomPresenceBadgesEl.innerHTML = `<span class="presence-badge">Not connected to a room</span>`;
+    return;
+  }
   if (!participants.length) {
     roomPresenceBadgesEl.innerHTML = `<span class="presence-badge you online">${me} (you)</span>`;
     return;
@@ -1388,6 +1402,12 @@ async function ensureTasteProfileReady() {
     return true;
   }
 
+  const meResponse = await fetch("/api/me");
+  const mePayload = await meResponse.json().catch(() => ({}));
+  if (!meResponse.ok || !mePayload?.authenticated) {
+    throw new Error("Spotify is not connected. Go to Home and click Connect Spotify first.");
+  }
+
   setRoomStatus("Preparing your Spotify taste profile for room sharing...", false);
   try {
     await bootstrapSync(false);
@@ -1562,11 +1582,12 @@ recomputeRoomBtn.addEventListener("click", async () => {
   try {
     logEvent("rooms", "Manual recompute requested");
     if (!activeRoomName) {
-      const roomCandidate = roomNameInput.value.trim();
+      const roomCandidate = (roomNameInput.value.trim() || localStorage.getItem("roomName") || "").trim();
       if (!roomCandidate) {
-        setRoomStatus("Enter a room name and click Create Room first.");
+        setRoomStatus("No active room yet. Go to Lobby, enter room name, then click Create Room.");
         return;
       }
+      roomNameInput.value = roomCandidate;
       await joinRoom();
     }
 
