@@ -1009,7 +1009,14 @@ function renderCompatibility(payload) {
     || typeof payload?.score?.overallScore !== "number"
     || !payload.similarityLabel
   ) {
+    const participants = Array.isArray(payload?.participants) ? payload.participants : [];
+    const readyCount = participants.filter((participant) => participant?.hasTasteProfile).length;
+    const connectedCount = participants.filter((participant) => participant?.connected).length;
+    const helper = participants.length
+      ? `<p class="muted">Connected: ${connectedCount} | taste-ready: ${readyCount}. Your Spotify profile is loaded; invite one friend and click recompute again.</p>`
+      : "";
     compatibilityEl.innerHTML = `<p class="muted">Waiting for two participants with taste profiles.</p>`;
+    compatibilityEl.innerHTML += helper;
     horoscopeEl.innerHTML = `<p class="muted">Horoscope appears after compatibility is computed.</p>`;
     nowCompareEl.innerHTML = `<p class="muted">Compare now playing once both users share playback state.</p>`;
     return;
@@ -1337,7 +1344,7 @@ async function publishDataMessage(message) {
 
 async function shareLocalStateViaBackend() {
   if (!activeRoomName || !activeParticipantName) {
-    return;
+    throw new Error("Join a room first so your Spotify taste/profile can be shared.");
   }
 
   logEvent("rooms", "Sharing local state", { activeRoomName, activeParticipantName });
@@ -1370,19 +1377,39 @@ async function shareLocalStateViaBackend() {
   }
 }
 
+function hasTasteProfileReady() {
+  const byInsights = Number(latestModelInsights?.vectorDims ?? 0) > 0;
+  const byProfileText = /Vector dims/i.test(profileEl?.textContent ?? "");
+  return byInsights || byProfileText;
+}
+
+async function ensureTasteProfileReady() {
+  if (hasTasteProfileReady()) {
+    return true;
+  }
+
+  setRoomStatus("Preparing your Spotify taste profile for room sharing...", false);
+  try {
+    await bootstrapSync(false);
+  } catch {
+    // Refresh may still recover from cached profile even if bootstrap fails.
+  }
+  await refresh().catch(() => {});
+  return hasTasteProfileReady();
+}
+
 async function joinRoom() {
   const roomName = roomNameInput.value.trim();
   const participantName = participantNameInput.value.trim() || spotifyDisplayName;
-
-  const tasteReady = profileEl.textContent?.includes("Vector dims");
 
   if (!roomName || !participantName) {
     setRoomStatus("Enter a room name. Display name auto-fills from Spotify, or type one.");
     return;
   }
 
+  const tasteReady = await ensureTasteProfileReady();
   if (!tasteReady) {
-    setRoomStatus("Taste profile not ready yet. Click Sync With Spotify and wait for 100%.");
+    setRoomStatus("Taste profile not ready yet. Click Sync and wait for your Spotify profile to hydrate.");
     appendSyncLog("Join blocked: taste profile not ready.");
     return;
   }
@@ -1534,10 +1561,25 @@ leaveRoomBtn.addEventListener("click", async () => {
 recomputeRoomBtn.addEventListener("click", async () => {
   try {
     logEvent("rooms", "Manual recompute requested");
+    if (!activeRoomName) {
+      const roomCandidate = roomNameInput.value.trim();
+      if (!roomCandidate) {
+        setRoomStatus("Enter a room name and click Create Room first.");
+        return;
+      }
+      await joinRoom();
+    }
+
     await shareLocalStateViaBackend();
     await refreshRoomPanels();
+    if (lastRoomParticipants < 2) {
+      setRoomStatus("Your Spotify profile is now shared. Invite one friend to unlock pair compatibility.", true);
+    } else {
+      setRoomStatus("Compatibility recomputed with latest shared Spotify state.", true);
+    }
   } catch (error) {
     logEvent("rooms", "Manual recompute failed", error);
+    setRoomStatus(error instanceof Error ? error.message : String(error));
     setDebug(String(error));
   }
 });
