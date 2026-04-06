@@ -58,14 +58,46 @@
         color: #ffffff;
         transform: translateY(-1px);
       }
+      .header-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+        gap: 12px;
+      }
       .top-nav {
         display: flex;
         gap: 8px;
-        margin-bottom: 12px;
       }
       .top-nav button.active {
         background: #111111;
         color: #ffffff;
+      }
+      .spotify-badge {
+        border: 2px solid #111111;
+        background: #ffffff;
+        padding: 6px 10px;
+        font-size: 0.82rem;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+        transition: background 120ms ease, color 120ms ease;
+      }
+      .spotify-badge:hover {
+        background: #111111;
+        color: #ffffff;
+      }
+      .spotify-badge-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #666;
+      }
+      .spotify-badge-dot.connected {
+        background: #1DB954;
       }
       .screen {
         display: none;
@@ -564,6 +596,12 @@
         width: 38px;
         height: 38px;
         margin: 0;
+        background: #ffffff;
+        border: 2px solid #111111;
+      }
+      .field-with-action .inside-action:hover {
+        background: #111111;
+        color: #ffffff;
       }
       .field-with-action .copy-action {
         right: 50px;
@@ -831,9 +869,15 @@
   <body>
     <main>
       <h1>Wave2Vector Spotify Live</h1>
-      <div class="top-nav">
-        <button id="view-home" class="active">Home</button>
-        <button id="view-lobby">Lobby</button>
+      <div class="header-bar">
+        <div class="top-nav">
+          <button id="view-home" class="active">Home</button>
+          <button id="view-lobby">Lobby</button>
+        </div>
+        <button id="spotify-badge" class="spotify-badge" title="Click to connect Spotify">
+          <span class="spotify-badge-dot"></span>
+          <span id="spotify-badge-text">Connect Spotify</span>
+        </button>
       </div>
       <div id="demo-banner" class="demo-banner hidden">Demo mode: Connect Spotify and jump directly into lobby + room features (no separate app account required).</div>
       <div id="global-account-banner" class="global-account-banner">Register or log in to continue.</div>

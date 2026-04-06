@@ -68,6 +68,9 @@ const globalAccountBannerEl = document.getElementById("global-account-banner");
 const demoBannerEl = document.getElementById("demo-banner");
 const homeViewBtn = document.getElementById("view-home");
 const lobbyViewBtn = document.getElementById("view-lobby");
+const spotifyBadgeEl = document.getElementById("spotify-badge");
+const spotifyBadgeDotEl = spotifyBadgeEl?.querySelector(".spotify-badge-dot");
+const spotifyBadgeTextEl = document.getElementById("spotify-badge-text");
 const homeScreenEl = document.getElementById("screen-home");
 const lobbyScreenEl = document.getElementById("screen-lobby");
 const roomScreenEl = document.getElementById("screen-room");
@@ -233,6 +236,23 @@ function setGlobalAccountBanner(account) {
   const name = (account.displayName || account.username || account.email || "").trim() || "there";
   globalAccountBannerEl.textContent = `Welcome ${name}`;
   globalAccountBannerEl.classList.add("welcome");
+}
+
+function updateSpotifyBadge(connected = false, displayName = "") {
+  if (!spotifyBadgeEl || !spotifyBadgeDotEl || !spotifyBadgeTextEl) {
+    return;
+  }
+
+  if (connected) {
+    spotifyBadgeDotEl.classList.add("connected");
+    spotifyBadgeDotEl.classList.remove("hidden");
+    spotifyBadgeTextEl.textContent = displayName || "Connected to Spotify";
+    spotifyBadgeEl.title = `Connected as ${displayName || "Spotify user"}`;
+  } else {
+    spotifyBadgeDotEl.classList.remove("connected");
+    spotifyBadgeTextEl.textContent = "Connect Spotify";
+    spotifyBadgeEl.title = "Click to connect Spotify";
+  }
 }
 
 let toastTimer = null;
@@ -664,6 +684,7 @@ function renderAuthStatus(profile) {
     authStatusEl.innerHTML = `
       <span class="muted">Not connected to Spotify.</span>
     `;
+    updateSpotifyBadge(false);
     return;
   }
 
@@ -686,6 +707,7 @@ function renderAuthStatus(profile) {
   if (!participantNameInput.value.trim() || participantNameInput.value.trim().toLowerCase() === "alex") {
     participantNameInput.value = spotifyDisplayName;
   }
+  updateSpotifyBadge(true, spotifyDisplayName);
 }
 
 function setAccountAuthControlsVisible(isVisible) {
