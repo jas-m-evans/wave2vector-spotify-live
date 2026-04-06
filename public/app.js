@@ -730,7 +730,7 @@ function renderAccountStatus(payload) {
     accountLogoutBtn?.classList.add("hidden");
     accountStatusEl.textContent = "Register or log in to continue.";
     setGlobalAccountBanner(null);
-    setFeatureGate(true);
+    // Do not call setFeatureGate(true) — lobby and rooms are public.
     return;
   }
   currentAccount = payload.account;
@@ -1800,11 +1800,6 @@ homeViewBtn?.addEventListener("click", () => {
 });
 
 lobbyViewBtn?.addEventListener("click", () => {
-  if (!currentAccount && !demoMode) {
-    setSyncStatus("Create or log in to an account first.");
-    setActiveScreen("home");
-    return;
-  }
   setActiveScreen("lobby");
   logEvent("ui", "Switched to Lobby screen");
 });
