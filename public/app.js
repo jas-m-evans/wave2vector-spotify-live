@@ -66,6 +66,8 @@ const accountPanelEl = document.getElementById("account-panel");
 const accountGateEl = document.getElementById("account-gate");
 const globalAccountBannerEl = document.getElementById("global-account-banner");
 const demoBannerEl = document.getElementById("demo-banner");
+const testerNoteEl = document.getElementById("tester-note");
+const tryMockDemoBtnEl = document.getElementById("try-mock-demo");
 const homeViewBtn = document.getElementById("view-home");
 const lobbyViewBtn = document.getElementById("view-lobby");
 const spotifyBadgeEl = document.getElementById("spotify-badge");
@@ -90,10 +92,96 @@ let roomHistory = [];
 let currentAccount = null;
 let latestModelInsights = null;
 let previousParticipantNames = new Set();
-let isMockMode = false;
+let mockMode = false;
 let localSharedState = {
   tasteProfile: null,
   nowPlayingState: null,
+};
+
+const MOCK_RECOMMENDATIONS = [
+  {
+    trackId: "4cOdK2wGLETKBW3PvgPWqT",
+    name: "Talk Show Host",
+    artist: "Radiohead",
+    similarity: 0.93,
+    blendedScore: 0.89,
+    tasteSimilarity: 0.87,
+    reasons: ["electronic", "melancholic", "alternative"],
+    artworkUrl: null,
+    previewUrl: null,
+  },
+  {
+    trackId: "6habFhsOp2NvyWj7SGfDHO",
+    name: "Get Lucky",
+    artist: "Daft Punk ft. Pharrell Williams",
+    similarity: 0.88,
+    blendedScore: 0.85,
+    tasteSimilarity: 0.80,
+    reasons: ["high danceability", "funk", "feel-good"],
+    artworkUrl: null,
+    previewUrl: null,
+  },
+  {
+    trackId: "7ouMYWpwJ422jRcDASZB7P",
+    name: "HUMBLE.",
+    artist: "Kendrick Lamar",
+    similarity: 0.86,
+    blendedScore: 0.83,
+    tasteSimilarity: 0.78,
+    reasons: ["high energy", "hip-hop", "lyrically dense"],
+    artworkUrl: null,
+    previewUrl: null,
+  },
+  {
+    trackId: "2takcwOaAZWiXQijPHIx7B",
+    name: "Redbone",
+    artist: "Childish Gambino",
+    similarity: 0.84,
+    blendedScore: 0.81,
+    tasteSimilarity: 0.76,
+    reasons: ["psychedelic soul", "groove", "night-drive"],
+    artworkUrl: null,
+    previewUrl: null,
+  },
+  {
+    trackId: "6K4t31amVTZDgR3sKmwUJJ",
+    name: "Wake Up",
+    artist: "Arcade Fire",
+    similarity: 0.82,
+    blendedScore: 0.79,
+    tasteSimilarity: 0.74,
+    reasons: ["anthemic", "indie rock", "driving rhythm"],
+    artworkUrl: null,
+    previewUrl: null,
+  },
+];
+
+const MOCK_PROFILE_AGE_MS = 1000 * 60 * 60 * 2; // 2 hours
+
+const MOCK_PROFILE = {
+  hasTasteVector: true,
+  dims: 13,
+  updatedAt: new Date(Date.now() - MOCK_PROFILE_AGE_MS).toISOString(),
+};
+
+const MOCK_INSIGHTS = {
+  vectorDims: 13,
+  mode: "batch",
+  sampled: 150,
+  cached: 142,
+  metadataFallbackCount: 8,
+  vectorFailureCount: 2,
+  updatedAt: new Date(Date.now() - MOCK_PROFILE_AGE_MS).toISOString(),
+  topFeatures: [
+    { feature: "energy", value: 0.74 },
+    { feature: "danceability", value: 0.68 },
+    { feature: "valence", value: 0.52 },
+    { feature: "acousticness", value: 0.31 },
+    { feature: "instrumentalness", value: 0.19 },
+    { feature: "liveness", value: 0.17 },
+    { feature: "speechiness", value: 0.12 },
+  ],
+  sourceCounts: { top_tracks: 50, saved_tracks: 60, recent: 40 },
 };
 
 const featureLabels = [
@@ -235,7 +323,7 @@ const MOCK_PROFILE_DATA = {
 };
 
 function loadMockProfile() {
-  isMockMode = true;
+  mockMode = true;
   recruiterNoteEl?.classList.add("hidden");
   mockModeNoticeEl?.classList.remove("hidden");
   setFeatureGate(false);
@@ -852,6 +940,31 @@ function renderAuthStatus(profile) {
   updateSpotifyBadge(true, spotifyDisplayName);
 }
 
+function activateMockMode() {
+  mockMode = true;
+  testerNoteEl?.classList.add("hidden");
+  setFeatureGate(false);
+  updateSpotifyBadge(true, "Mock Listener");
+  if (authStatusEl) {
+    authStatusEl.innerHTML = `
+      <span>
+        <strong>Mock Listener</strong>
+        <span class="connected-dot"></span>
+        <span class="muted" style="font-size:0.85rem;"> demo profile (no Spotify auth required)</span>
+      </span>
+    `;
+  }
+  loginBtn?.classList.add("hidden");
+  setSyncStatus("Mock profile loaded — exploring demo data.");
+  setSyncProgress(100);
+  setSyncPhaseState("complete");
+  appendSyncLog("Mock profile activated. Showing pre-built taste vector and sample recommendations.");
+  renderRecommendations(MOCK_RECOMMENDATIONS);
+  renderProfile(MOCK_PROFILE);
+  renderModelInsights(MOCK_INSIGHTS);
+  logEvent("mock", "Mock mode activated");
+}
+
 function setAccountAuthControlsVisible(isVisible) {
   const accountGridEl = accountEmailInput?.closest(".account-grid");
   accountEmailInput?.closest("label")?.classList.toggle("hidden", !isVisible);
@@ -1417,11 +1530,14 @@ async function checkAuth() {
       renderAuthStatus(profile);
 
       if (!profile.authenticated) {
-        setSyncStatus("Demo mode: connect Spotify to start recommendations and room sharing.");
+        // Show tester note with mock profile fallback for non-allowlisted visitors.
+        testerNoteEl?.classList.remove("hidden");
+        setSyncStatus("Spotify auth is enabled for invited testers. Use 'Explore Mock Profile' to browse demo data.");
         setSyncProgress(0);
         return;
       }
 
+      testerNoteEl?.classList.add("hidden");
       await refresh();
       return;
     }
@@ -2007,6 +2123,11 @@ recEl.addEventListener("mouseout", (event) => {
   if (card) {
     clearRecommendationHighlights();
   }
+});
+
+tryMockDemoBtnEl?.addEventListener("click", () => {
+  logEvent("mock", "Try mock demo button clicked");
+  activateMockMode();
 });
 
 logEvent("init", "Page fully loaded, running initialization sequence");
