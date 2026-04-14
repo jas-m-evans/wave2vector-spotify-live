@@ -75,6 +75,9 @@ const homeScreenEl = document.getElementById("screen-home");
 const lobbyScreenEl = document.getElementById("screen-lobby");
 const roomScreenEl = document.getElementById("screen-room");
 const toastEl = document.getElementById("toast");
+const recruiterNoteEl = document.getElementById("recruiter-note");
+const mockModeNoticeEl = document.getElementById("mock-mode-notice");
+const exploreMockProfileBtn = document.getElementById("explore-mock-profile");
 
 let activeRoomName = "";
 let activeParticipantName = "";
@@ -87,6 +90,7 @@ let roomHistory = [];
 let currentAccount = null;
 let latestModelInsights = null;
 let previousParticipantNames = new Set();
+let isMockMode = false;
 let localSharedState = {
   tasteProfile: null,
   nowPlayingState: null,
@@ -108,6 +112,147 @@ const featureLabels = [
   "duration",
 ];
 const syncPhaseOrder = ["auth", "pull_ids", "vectorize", "aggregate", "complete"];
+
+const MOCK_PROFILE_DATA = {
+  profile: {
+    hasTasteVector: true,
+    dims: 13,
+    updatedAt: Date.now() - 86400000,
+  },
+  modelInsights: {
+    mode: "spotify-audio-features",
+    vectorDims: 13,
+    topFeatures: [
+      { feature: "energy", value: 0.81 },
+      { feature: "valence", value: 0.72 },
+      { feature: "danceability", value: 0.68 },
+      { feature: "acousticness", value: 0.44 },
+      { feature: "tempo", value: 0.42 },
+      { feature: "loudness", value: 0.38 },
+    ],
+    lowFeatures: [
+      { feature: "instrumentalness", value: 0.04 },
+      { feature: "speechiness", value: 0.07 },
+      { feature: "liveness", value: 0.14 },
+      { feature: "key", value: 0.22 },
+    ],
+    sourceCounts: { short_term: 20, medium_term: 18, long_term: 15, recently_played: 12, saved_tracks: 8 },
+    topGenres: [
+      { genre: "indie pop", weight: 3.45 },
+      { genre: "alternative rock", weight: 2.80 },
+      { genre: "electronic", weight: 2.20 },
+      { genre: "dream pop", weight: 1.75 },
+      { genre: "lo-fi", weight: 1.40 },
+      { genre: "shoegaze", weight: 1.10 },
+    ],
+    topArtists: [
+      { name: "Tame Impala", popularity: 82 },
+      { name: "Arctic Monkeys", popularity: 88 },
+      { name: "Radiohead", popularity: 80 },
+      { name: "The Strokes", popularity: 74 },
+      { name: "Beach House", popularity: 68 },
+    ],
+    sampled: 24,
+    cached: 22,
+    metadataFallbackCount: 2,
+    vectorFailureCount: 0,
+    fallbackUsed: false,
+    updatedAt: Date.now() - 86400000,
+  },
+  recommendations: [
+    {
+      trackId: "4uLU6hMCjMI75M1A2tKUQC",
+      name: "Borderline",
+      artist: "Tame Impala",
+      artworkUrl: null,
+      previewUrl: null,
+      similarity: 0.91,
+      blendedScore: 0.88,
+      tasteSimilarity: 0.85,
+      reasons: ["energy", "valence", "danceability"],
+    },
+    {
+      trackId: "3n3Ppam7vgaVa1iaRUc9Lp",
+      name: "R U Mine?",
+      artist: "Arctic Monkeys",
+      artworkUrl: null,
+      previewUrl: null,
+      similarity: 0.87,
+      blendedScore: 0.84,
+      tasteSimilarity: 0.80,
+      reasons: ["energy", "acousticness"],
+    },
+    {
+      trackId: "0VjIjW4GlUZAMYd2vXMi3b",
+      name: "Creep",
+      artist: "Radiohead",
+      artworkUrl: null,
+      previewUrl: null,
+      similarity: 0.84,
+      blendedScore: 0.81,
+      tasteSimilarity: 0.78,
+      reasons: ["valence", "acousticness"],
+    },
+    {
+      trackId: "6habFhsOp2NvshLv26DqMb",
+      name: "Reptilia",
+      artist: "The Strokes",
+      artworkUrl: null,
+      previewUrl: null,
+      similarity: 0.80,
+      blendedScore: 0.77,
+      tasteSimilarity: 0.74,
+      reasons: ["energy", "danceability"],
+    },
+    {
+      trackId: "7ouMYWpwJ422jRcDASZB7P",
+      name: "Space Song",
+      artist: "Beach House",
+      artworkUrl: null,
+      previewUrl: null,
+      similarity: 0.76,
+      blendedScore: 0.74,
+      tasteSimilarity: 0.71,
+      reasons: ["acousticness", "valence"],
+    },
+  ],
+  projectionMap: {
+    mode: "taste-only",
+    axes: { x: "energy", y: "valence" },
+    points: [
+      { id: "taste-centroid", label: "Taste Centroid", role: "taste", x: 0.72, y: 0.65, score: undefined },
+      { id: "4uLU6hMCjMI75M1A2tKUQC", label: "Borderline", role: "selected", x: 0.79, y: 0.70, score: 0.91 },
+      { id: "3n3Ppam7vgaVa1iaRUc9Lp", label: "R U Mine?", role: "selected", x: 0.85, y: 0.60, score: 0.87 },
+      { id: "0VjIjW4GlUZAMYd2vXMi3b", label: "Creep", role: "selected", x: 0.55, y: 0.40, score: 0.84 },
+      { id: "6habFhsOp2NvshLv26DqMb", label: "Reptilia", role: "selected", x: 0.88, y: 0.55, score: 0.80 },
+      { id: "7ouMYWpwJ422jRcDASZB7P", label: "Space Song", role: "selected", x: 0.38, y: 0.72, score: 0.76 },
+      { id: "cand-1", label: "candidate", role: "candidate", x: 0.60, y: 0.58, score: 0.62 },
+      { id: "cand-2", label: "candidate", role: "candidate", x: 0.48, y: 0.80, score: 0.58 },
+      { id: "cand-3", label: "candidate", role: "candidate", x: 0.91, y: 0.42, score: 0.54 },
+      { id: "target-0", label: "Now Playing", role: "target", x: 0.75, y: 0.68 },
+    ],
+  },
+};
+
+function loadMockProfile() {
+  isMockMode = true;
+  recruiterNoteEl?.classList.add("hidden");
+  mockModeNoticeEl?.classList.remove("hidden");
+  setFeatureGate(false);
+  if (globalAccountBannerEl) {
+    globalAccountBannerEl.textContent = "Sample profile active — connect Spotify or register to see your real data";
+    globalAccountBannerEl.classList.add("welcome");
+  }
+  renderProfile(MOCK_PROFILE_DATA.profile);
+  renderModelInsights(MOCK_PROFILE_DATA.modelInsights);
+  renderRecommendations(MOCK_PROFILE_DATA.recommendations);
+  renderProjectionMap(MOCK_PROFILE_DATA.projectionMap);
+  setSyncStatus("Sample profile loaded. Connect Spotify to see your real taste data.");
+  setSyncProgress(100);
+  setSyncPhaseState("complete");
+  appendSyncLog("Sample profile rendered — synthetic data only.");
+  logEvent("mock", "Mock profile loaded for unauthenticated visitor");
+}
 
 function logEvent(scope, message, details) {
   const timestamp = new Date().toISOString();
@@ -1293,10 +1438,13 @@ async function checkAuth() {
     if (!profile.authenticated) {
       if (!accountPayload?.authenticated) {
         logEvent("auth", "No app account and no Spotify session");
-        setSyncStatus("Connect Spotify to get started.");
+        setSyncStatus("Connect Spotify to get started, or explore the sample profile below.");
         setSyncProgress(0);
+        // Keep the recruiter note visible so unauthenticated visitors can discover the mock profile.
+        recruiterNoteEl?.classList.remove("hidden");
       } else {
         logEvent("auth", "Spotify not connected, using cached profile");
+        recruiterNoteEl?.classList.add("hidden");
         recEl.innerHTML = `<p class="muted">Loading your saved profile recommendations...</p>`;
         profileEl.innerHTML = `<p class="muted">Spotify disconnected. Using your cached account profile if available.</p>`;
         setSyncStatus("Spotify not connected. Batch cache mode active when available.");
@@ -1307,7 +1455,8 @@ async function checkAuth() {
       return;
     }
 
-    // Spotify is connected — proceed with full flow regardless of app account.
+    // Spotify is connected — hide the recruiter note and proceed with full flow.
+    recruiterNoteEl?.classList.add("hidden");
     logEvent("auth", `Spotify connected${accountPayload?.authenticated ? `, app account: ${accountPayload.account?.email}` : ", no app account (Spotify-only)"}`);
     if (accountPayload?.account?.hasCachedProfile) {
       appendSyncLog("Using cached account profile. Skipping auto-bootstrap.");
@@ -1544,6 +1693,11 @@ async function leaveRoom() {
   await refreshRoomPanels();
   logEvent("rooms", "Leave room complete", { roomName });
 }
+
+exploreMockProfileBtn?.addEventListener("click", () => {
+  logEvent("mock", "Explore Sample Profile button clicked");
+  loadMockProfile();
+});
 
 loginBtn.addEventListener("click", () => {
   logEvent("auth", "Connect Spotify button clicked");
@@ -1893,6 +2047,7 @@ if (demoMode) {
   demoBannerEl?.classList.remove("hidden");
   accountPanelEl?.classList.add("hidden");
   accountGateEl?.classList.add("hidden");
+  recruiterNoteEl?.classList.add("hidden");
   setGlobalAccountBanner(null);
 }
 loadActiveRooms().catch(() => {

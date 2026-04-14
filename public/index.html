@@ -824,6 +824,43 @@
         padding: 10px 12px;
         font-size: 0.86rem;
       }
+      .recruiter-note {
+        margin-bottom: 14px;
+        border: 2px solid #111111;
+        background: #ffffff;
+        box-shadow: 4px 4px 0 #000000;
+        padding: 16px;
+      }
+      .recruiter-note h2 {
+        margin: 0 0 6px 0;
+        font-size: 1.1rem;
+        letter-spacing: 0.03em;
+      }
+      .recruiter-note p {
+        margin: 0 0 10px 0;
+        font-size: 0.88rem;
+        line-height: 1.55;
+      }
+      .recruiter-note p:last-of-type {
+        margin-bottom: 12px;
+      }
+      .tester-notice {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 6px;
+        border: 1px solid #111111;
+        background: #fffbe6;
+        padding: 6px 10px;
+        font-size: 0.84rem;
+        margin-bottom: 12px;
+      }
+      .mock-mode-notice {
+        margin-bottom: 12px;
+        border: 2px dashed #2f6f2f;
+        background: #edf7ee;
+        padding: 10px 14px;
+        font-size: 0.86rem;
+      }
       @keyframes pulseRing {
         0% { opacity: 0.35; }
         50% { opacity: 0.9; }
@@ -883,6 +920,18 @@
       <div id="global-account-banner" class="global-account-banner">Register or log in to continue.</div>
 
       <div id="screen-home" class="screen active">
+        <div id="recruiter-note" class="recruiter-note">
+          <h2>Wave2Vector — Live Spotify Taste Intelligence</h2>
+          <p>This app ingests your Spotify listening history, builds a 13-dimensional taste vector across danceability, energy, valence, acousticness, and more, then uses cosine similarity + Max-Marginal Relevance re-ranking to surface personalized recommendations in real time. Bring a friend into a shared LiveKit room and the system recomputes compatibility and surfaces mutual picks on the fly.</p>
+          <div class="tester-notice">
+            <strong>🔒 Spotify auth is enabled for invited testers</strong> — Spotify's developer quota limits new users to an allowlist while the app awaits extended access approval.
+          </div>
+          <p class="muted">Not an invited tester? Click below to explore a sample profile and see the full feature set with realistic synthetic data.</p>
+          <button id="explore-mock-profile">Explore Sample Profile →</button>
+        </div>
+        <div id="mock-mode-notice" class="mock-mode-notice hidden">
+          <strong>Sample profile active.</strong> All data below is synthetic — it illustrates the actual feature output of the pipeline with realistic values. Connect Spotify to see your real taste profile.
+        </div>
         <section id="account-panel" class="panel">
           <h2 id="account-panel-title">Log In or Register</h2>
           <div class="account-grid">
@@ -910,17 +959,17 @@
             <div class="pitch-card">
               <svg class="pitch-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M6 13c2-2 10-2 12 0"></path><path d="M8 9c3-1 5-1 8 0"></path></svg>
               <strong>Taste Mapping</strong>
-              <p class="muted">One sync builds your profile and powers recommendations instantly.</p>
+              <p class="muted">One sync builds your 13-dim audio feature vector and powers ranked recommendations instantly using cosine similarity + MMR re-ranking.</p>
             </div>
             <div class="pitch-card">
               <svg class="pitch-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16"></rect><path d="M8 8h8v8H8z"></path></svg>
               <strong>Live Lobby</strong>
-              <p class="muted">Create a room, share your link, and bring a friend into the same session.</p>
+              <p class="muted">Create a LiveKit room, share your link, and bring a friend into the same session for real-time compatibility scoring.</p>
             </div>
             <div class="pitch-card">
               <svg class="pitch-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18l5-6 4 3 7-9"></path><path d="M4 20h16"></path></svg>
               <strong>Shared Insights</strong>
-              <p class="muted">Compare compatibility and discover mutual tracks together.</p>
+              <p class="muted">Compare compatibility scores, discover mutual tracks, and see a genre + artist breakdown of your blended taste profile.</p>
             </div>
           </div>
         </section>
