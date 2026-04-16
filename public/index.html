@@ -824,21 +824,6 @@
         padding: 10px 12px;
         font-size: 0.86rem;
       }
-      .tester-note {
-        margin-bottom: 12px;
-        border: 2px solid #d4a800;
-        background: #fffbea;
-        padding: 12px 14px;
-        font-size: 0.86rem;
-        line-height: 1.5;
-      }
-      .tester-note strong {
-        display: block;
-        margin-bottom: 4px;
-      }
-      .tester-note .mock-cta {
-        margin-top: 10px;
-      }
       @keyframes pulseRing {
         0% { opacity: 0.35; }
         50% { opacity: 0.9; }
@@ -894,14 +879,7 @@
           <span id="spotify-badge-text">Connect Spotify</span>
         </button>
       </div>
-      <div id="demo-banner" class="demo-banner hidden">Portfolio demo — Wave2Vector maps your Spotify listening history to a taste vector and uses it to power real-time music recommendations and live room compatibility. Spotify OAuth is restricted to invited testers; use the mock profile below to explore the full feature set without a Spotify account.</div>
-      <div id="tester-note" class="tester-note hidden">
-        <strong>🔒 Spotify auth is enabled for invited testers only.</strong>
-        Not on the list? No problem — explore a pre-built mock profile to see taste mapping, recommendations, and live-room compatibility in action.
-        <div class="mock-cta">
-          <button id="try-mock-demo">Explore Mock Profile</button>
-        </div>
-      </div>
+      <div id="demo-banner" class="demo-banner hidden">Demo mode — Spotify OAuth requires an approved account. Use the mock profile below to explore taste mapping, recommendations, and live-room compatibility. <button id="try-mock-demo">Explore Mock Profile</button></div>
       <div id="global-account-banner" class="global-account-banner">Register or log in to continue.</div>
 
       <div id="screen-home" class="screen active">
@@ -1012,7 +990,7 @@
           <h2>Lobby</h2>
           <p class="muted">Jam out with friends.</p>
           <div class="lobby-hero">
-            <h3>LiveKit Demo Reel</h3>
+            <h3>Live Rooms</h3>
             <p class="muted">Real-time room presence + shared taste vectors + compatibility recompute from live participant state.</p>
             <div class="demo-stat-grid">
               <div class="demo-stat"><span class="demo-stat-label">ACTIVE ROOMS</span><span id="demo-active-rooms" class="demo-stat-value">0</span></div>
