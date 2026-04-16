@@ -66,7 +66,6 @@ const accountPanelEl = document.getElementById("account-panel");
 const accountGateEl = document.getElementById("account-gate");
 const globalAccountBannerEl = document.getElementById("global-account-banner");
 const demoBannerEl = document.getElementById("demo-banner");
-const testerNoteEl = document.getElementById("tester-note");
 const tryMockDemoBtnEl = document.getElementById("try-mock-demo");
 const homeViewBtn = document.getElementById("view-home");
 const lobbyViewBtn = document.getElementById("view-lobby");
@@ -798,7 +797,6 @@ function renderAuthStatus(profile) {
 
 function activateMockMode() {
   mockMode = true;
-  testerNoteEl?.classList.add("hidden");
   setFeatureGate(false);
   updateSpotifyBadge(true, "Mock Listener");
   if (authStatusEl) {
@@ -806,12 +804,12 @@ function activateMockMode() {
       <span>
         <strong>Mock Listener</strong>
         <span class="connected-dot"></span>
-        <span class="muted" style="font-size:0.85rem;"> demo profile (no Spotify auth required)</span>
+        <span class="muted" style="font-size:0.85rem;"> mock profile</span>
       </span>
     `;
   }
   loginBtn?.classList.add("hidden");
-  setSyncStatus("Mock profile loaded — exploring demo data.");
+  setSyncStatus("Mock profile loaded.");
   setSyncProgress(100);
   setSyncPhaseState("complete");
   appendSyncLog("Mock profile activated. Showing pre-built taste vector and sample recommendations.");
@@ -1386,14 +1384,11 @@ async function checkAuth() {
       renderAuthStatus(profile);
 
       if (!profile.authenticated) {
-        // Show tester note with mock profile fallback for non-allowlisted visitors.
-        testerNoteEl?.classList.remove("hidden");
-        setSyncStatus("Spotify auth is enabled for invited testers. Use 'Explore Mock Profile' to browse demo data.");
+        setSyncStatus("Spotify not connected. Use 'Explore Mock Profile' to browse demo data.");
         setSyncProgress(0);
         return;
       }
 
-      testerNoteEl?.classList.add("hidden");
       await refresh();
       return;
     }
@@ -1401,7 +1396,7 @@ async function checkAuth() {
     const accountPayload = await checkAccountAuth();
     logEvent("auth", `Account auth payload: authenticated=${accountPayload?.authenticated}`, accountPayload);
 
-    // Always check Spotify regardless of app account status — Spotify connectivity is prioritized for demo.
+    // Always check Spotify regardless of app account status.
     const res = await fetch("/api/me");
     const profile = await res.json();
     logEvent("auth", `Spotify auth response ${res.status}`, profile);

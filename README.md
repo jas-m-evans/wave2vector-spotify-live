@@ -6,11 +6,13 @@ This project intentionally avoids downloading or transporting raw Spotify audio.
 
 ## What this includes
 
+- App account system (register / log in / log out)
 - Spotify OAuth login flow
 - Session + token refresh handling
 - `now playing` API
 - Feature-cache seeding for popular track IDs
 - User taste-profile refresh from top Spotify tracks
+- Background library sync with progress tracking
 - Live recommendations API using vector similarity
 - Blended reranking (now-playing similarity + taste affinity)
 - Diversity-aware reranking to reduce near-duplicate suggestions
@@ -19,7 +21,8 @@ This project intentionally avoids downloading or transporting raw Spotify audio.
 - LiveKit-backed two-user room/session mode
 - Room-level compatibility scoring + grounded taste horoscope summary
 - Room-level mutual recommendation ranking with fairness balancing
-- Local JSON persistence for room events and snapshots
+- Room history and event log
+- Local JSON persistence (dev) and Upstash Redis (production)
 
 ## Architecture note (important)
 
@@ -61,7 +64,7 @@ npm install
 npm run dev
 ```
 
-8. Open `http://localhost:8787`.
+8. Open `http://localhost:8787`, register an account, then connect Spotify.
 
 ## Easy testing (fast path)
 
@@ -124,23 +127,24 @@ This app is fully compatible with Vercel using Upstash Redis for session + room 
 - Upstash Redis: 10K commands/day (sufficient for MVP testing)
 - LiveKit Cloud: free tier available for testing
 
-## Solo flow (unchanged)
+## Solo flow
 
-1. Click **Connect Spotify**
-2. Click **Seed famous-song feature cache**
-3. Click **Refresh taste profile**
-4. Play a track in Spotify and click **Refresh now playing + recs**
-5. Optionally click **Start live polling**
-6. Tune controls:
+1. Register an account and log in
+2. Click **Connect Spotify**
+3. Click **Seed famous-song feature cache**
+4. Click **Refresh taste profile**
+5. Play a track in Spotify and click **Refresh now playing + recs**
+6. Optionally click **Start live polling**
+7. Tune controls:
 - `Diversity`
 - `Taste weight`
 - `Recommendation count`
 
 ## Two-user room flow
 
-1. User A authenticates with Spotify.
+1. User A registers an account and authenticates with Spotify.
 2. User A joins/creates a room by name.
-3. User B authenticates with Spotify (second browser profile/window/device).
+3. User B registers a separate account and authenticates with Spotify (second browser profile/window/device).
 4. User B joins the same room name.
 5. Each user shares taste profile and optional now-playing state.
 6. Once both users are present with taste profiles, room analytics populate automatically.
@@ -191,26 +195,52 @@ Reason tags include examples like:
 
 ## API endpoints
 
-Existing:
+### Auth and account
 
-- `GET /health`
-- `GET /auth/spotify/login`
-- `GET /auth/spotify/callback`
-- `GET /api/spotify/now-playing`
-- `POST /api/library/seed-famous`
-- `GET /api/library`
-- `GET /api/profile`
-- `POST /api/profile/taste-refresh`
-- `GET /api/recommendations/live?k=5&diversity=0.2&tasteWeight=0.25`
+- `POST /api/account/register` — create a new app account
+- `POST /api/account/login` — log in to an existing account
+- `POST /api/account/logout` — log out (clears cookie)
+- `GET /api/account/me` — current account info
+- `GET /api/me` — current Spotify session info
 
-Room mode:
+### Spotify
 
-- `POST /api/livekit/token`
-- `POST /api/rooms/:roomName/share-state`
-- `POST /api/rooms/:roomName/leave`
-- `GET /api/rooms/:roomName/state`
-- `GET /api/rooms/:roomName/compatibility`
-- `GET /api/rooms/:roomName/mutual-recommendations?k=10`
+- `GET /auth/spotify/login` — start Spotify OAuth flow
+- `GET /auth/spotify/callback` — OAuth redirect target
+- `GET /api/spotify/now-playing` — currently playing track
+
+### Library and profile
+
+- `POST /api/library/seed-famous` — seed feature cache from well-known tracks
+- `GET /api/library` — list cached library tracks
+- `GET /api/profile` — current taste profile
+- `POST /api/profile/taste-refresh` — rebuild taste vector from top Spotify tracks
+- `POST /api/sync/bootstrap` — start a full library sync
+- `GET /api/sync/progress` — current sync progress
+
+### Recommendations
+
+- `GET /api/recommendations/live?k=5&diversity=0.2&tasteWeight=0.25` — ranked recommendations
+
+### Rooms
+
+- `POST /api/livekit/token` — issue a LiveKit access token
+- `GET /api/rooms/active` — list active rooms
+- `POST /api/rooms/:roomName/share-state` — publish taste + now-playing state to room
+- `POST /api/rooms/:roomName/publish` — publish a raw event to room
+- `POST /api/rooms/:roomName/leave` — leave a room
+- `POST /api/rooms/:roomName/resume` — rejoin a room and restore state
+- `GET /api/rooms/:roomName/state` — current room state
+- `GET /api/rooms/:roomName/compatibility` — compatibility analysis for room participants
+- `GET /api/rooms/:roomName/mutual-recommendations?k=10` — mutual recommendations
+- `GET /api/rooms/:roomName/history` — room event history
+
+### Utilities
+
+- `GET /health` — server health check
+- `GET /api/config/status` — environment/config readiness
+- `POST /api/debug/logs` — receive client-side debug log batches
+- `GET /demo` — demo mode (serves the same UI, bypasses account gate)
 
 ### LiveKit token endpoint
 
@@ -218,21 +248,14 @@ Room mode:
 - Body: `{ roomName: string, participantName: string }`
 - Returns: `{ url, roomName, participantName, token }`
 
-## Local persistence
+## Persistence
 
-Room mode writes local JSON files:
+In local development, room state is written to JSON files:
 
 - `.data/livekit-events.json` (append-only event log)
 - `.data/livekit-room-state.json` (latest room snapshots)
 
-Persisted room events:
-
-- `room_joined`
-- `room_left`
-- `taste_profile_shared`
-- `now_playing_shared`
-- `compatibility_computed`
-- `mutual_recommendations_computed`
+When `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` are set (e.g. on Vercel), the app uses Upstash Redis instead of local files.
 
 ## Local 2-user test method
 
@@ -245,7 +268,7 @@ Test steps:
 
 1. Start LiveKit locally
 2. Start this app
-3. Authenticate both users separately
-4. Join same room name from both clients
+3. Register separate accounts and authenticate with Spotify for both users
+4. Join the same room name from both clients
 5. Confirm participants appear
 6. Confirm compatibility panel and mutual recommendations update
