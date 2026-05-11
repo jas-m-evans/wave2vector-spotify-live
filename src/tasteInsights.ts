@@ -179,7 +179,7 @@ function scalarFeature(
           normalized >= 0.5
             ? "Words and vocal rhythm are a big part of what grabs you."
             : "You mostly want melody over spoken-word texture.",
-        highDescriptor: "lyric-heavy delivery",
+        highDescriptor: "lyric-forward delivery",
         lowDescriptor: "melody-first songs",
         comparisonWord: "spoken-word presence",
       };
