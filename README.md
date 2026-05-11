@@ -11,6 +11,7 @@ This project intentionally avoids downloading or transporting raw Spotify audio.
 - `now playing` API
 - Feature-cache seeding for popular track IDs
 - User taste-profile refresh from top Spotify tracks
+- Rich taste-profile storytelling with percentile-based listener insights
 - Live recommendations API using vector similarity
 - Blended reranking (now-playing similarity + taste affinity)
 - Diversity-aware reranking to reduce near-duplicate suggestions
