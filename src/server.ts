@@ -35,6 +35,7 @@ import {
 import { createLiveKitAccessToken } from "./livekit.js";
 import { computeMutualRecommendations } from "./mutualRecommendations.js";
 import { recommendNearest } from "./recommend.js";
+import { buildTasteStory } from "./tasteInsights.js";
 import {
   createSessionId,
   createStateToken,
@@ -502,6 +503,7 @@ function buildModelInsights(session: SessionRecord) {
     fallbackUsed: sync?.fallbackUsed ?? false,
     topGenres: session.artistInsights?.topGenres ?? [],
     topArtists: session.artistInsights?.topArtists ?? [],
+    tasteStory: buildTasteStory(session),
     updatedAt: session.tasteUpdatedAt,
   };
 }
@@ -788,7 +790,6 @@ async function refreshTasteProfileBatch(
     try {
       await sleep(260);
       const vector = await cacheTrack(trackId, session.tokens, {
-        metadataOnly: true,
         fallbackMetadata: metadataHints.get(trackId),
       });
       vectors.push(vector.vector);
@@ -1155,6 +1156,8 @@ app.get("/auth/spotify/callback", async (req, res) => {
     if (aid) {
       try {
         const profile = await fetchSpotifyProfile(tokens.accessToken).catch(() => undefined);
+        session.spotifyProfile = profile;
+        await setStoredSession(session);
         await saveSessionCacheToAccount(aid, session, profile);
         // eslint-disable-next-line no-console
         console.log(`[oauth] Cached Spotify profile to account ${aid}`);
@@ -1307,6 +1310,12 @@ app.get("/api/me", async (req, res) => {
   try {
     const session = await getActiveSession(req);
     const profile = await fetchSpotifyProfile(session.tokens.accessToken);
+    session.spotifyProfile = profile;
+    await setStoredSession(session);
+    const account = await getActiveAccount(req);
+    if (account) {
+      await saveSessionCacheToAccount(account.id, session, profile);
+    }
     return res.json({ authenticated: true, ...profile });
   } catch {
     return res.json({ authenticated: false });

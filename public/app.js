@@ -179,6 +179,95 @@ const MOCK_INSIGHTS = {
     { feature: "speechiness", value: 0.12 },
   ],
   sourceCounts: { top_tracks: 50, saved_tracks: 60, recent: 40 },
+  tasteStory: {
+    user_display_name: "Demo Listener",
+    analysis_date: new Date(Date.now() - MOCK_PROFILE_AGE_MS).toISOString(),
+    opening_narrative:
+      "Demo Listener gravitates toward energetic, rhythm-first songs that stay bright without feeling disposable. Combat, Militarie Gun, and Tokyo Police Club all fit that lane: guitars with movement, hooks with lift, and very little dead air. This is someone who wants music to sharpen the moment, not just fill it. That makes you a kinetic seeker.",
+    micro_archetype: "kinetic seeker",
+    big_three_features: [
+      {
+        feature: "Energy",
+        user_value: 0.74,
+        percentile: 74,
+        plain_english: "Your picks usually hit with motion and urgency instead of fading into the wallpaper. You naturally lean toward this sound.",
+        comparative_insight: "You're higher in musical intensity than 74% of listeners.",
+        artist_connection: "Combat and Militarie Gun both reinforce your pull toward kinetic intensity, and indie rock keeps that preference consistent.",
+        personality_reveal: "You want music that changes the temperature of the room.",
+      },
+      {
+        feature: "Danceability",
+        user_value: 0.68,
+        percentile: 68,
+        plain_english: "Your music usually has a steady pulse and a body-moving feel. You naturally lean toward this sound.",
+        comparative_insight: "You're higher in danceable momentum than 68% of listeners.",
+        artist_connection: "Tokyo Police Club and Combat make sense here because they keep your rhythms moving without turning into club music.",
+        personality_reveal: "You respond fast to rhythm and momentum.",
+      },
+      {
+        feature: "Valence",
+        user_value: 0.52,
+        percentile: 52,
+        plain_english: "Your songs tilt a little bright instead of fully dark. You naturally lean toward this sound.",
+        comparative_insight: "You're higher in musical positivity than 52% of listeners.",
+        artist_connection: "Militarie Gun keeps enough melodic lift in the mix to match your taste for intensity without despair.",
+        personality_reveal: "You use music as fuel more than emotional excavation.",
+      },
+    ],
+    audio_profile_grid: {
+      Loudness: {
+        value: -6.4,
+        percentile: 71,
+        insight: "Your taste tilts toward punchy, present mixes that feel immediate. This is one of the louder parts of your taste.",
+      },
+      Acousticness: {
+        value: 0.31,
+        percentile: 31,
+        insight: "You prefer polished production over campfire rawness. You clearly do not chase this trait for its own sake.",
+      },
+      Speechiness: {
+        value: 0.12,
+        percentile: 12,
+        insight: "You mostly want melody over spoken-word texture. You clearly do not chase this trait for its own sake.",
+      },
+      Tempo: {
+        value: 118,
+        percentile: 72,
+        insight: "Your music keeps moving with a brisk heartbeat. This is one of the louder parts of your taste.",
+      },
+      Mode: {
+        value: "Major (82% major)",
+        percentile: 82,
+        insight: "Most of your songs lean bright and resolved instead of moody or shadowy. This is one of the louder parts of your taste.",
+      },
+      Instrumentalness: {
+        value: 0.19,
+        percentile: 19,
+        insight: "You mostly want a voice or lyrical hook in the center. You clearly do not chase this trait for its own sake.",
+      },
+    },
+    artist_feature_bridge:
+      "Combat, Militarie Gun, and Tokyo Police Club all map back to the same core signals: kinetic intensity, rhythms that move, and uplifting color. Even when the subgenre shifts, you keep choosing songs that preserve that emotional and production DNA.",
+    musical_dna:
+      "Indie rock with an energetic, bright, produced, rhythm-forward center. You like songs that feel deliberate and emotionally legible, not shapeless background noise.",
+    comparison_stats: [
+      "Energy: Top 26% — kinetic intensity shows up more often for you than for most listeners.",
+      "Danceability: Top 32% — rhythms that move show up more often for you than for most listeners.",
+      "Loudness: Top 29% — punchy production shows up more often for you than for most listeners.",
+    ],
+    vibe_tags: ["#indie-rock", "#energetic", "#rhythmic", "#driving", "#major-key", "#production-conscious"],
+    friction_points: [
+      "Slow ambient drift may feel too passive for your taste.",
+      "Very raw unplugged recordings may feel underpowered next to the polish you usually like.",
+    ],
+    confidence_score: 86,
+    data_completeness: {
+      has_artists: true,
+      has_genres: true,
+      has_audio_features: true,
+      sample_size_tracks: 150,
+    },
+  },
 };
 
 const featureLabels = [
@@ -943,7 +1032,7 @@ function renderBarRows(rows) {
           const width = Math.max(0, Math.min(100, Math.round(value * 100)));
           return `
             <div class="bar-row">
-              <span>${row.feature}</span>
+              <span>${escapeHtml(row.feature)}</span>
               <div class="bar-track"><div class="bar-fill" style="width:${width}%;"></div></div>
               <span>${(value * 100).toFixed(0)}%</span>
             </div>
@@ -952,6 +1041,15 @@ function renderBarRows(rows) {
         .join("")}
     </div>
   `;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function roleColor(role) {
@@ -1066,8 +1164,79 @@ function renderModelInsights(insights) {
     : featureLabels.map((feature, idx) => ({ feature, value: 0 }));
 
   const updated = insights.updatedAt ? new Date(insights.updatedAt).toLocaleString() : "unknown";
+  const tasteStory = insights.tasteStory ?? null;
+  const bigThree = Array.isArray(tasteStory?.big_three_features) ? tasteStory.big_three_features : [];
+  const audioGridRows = tasteStory?.audio_profile_grid
+    ? Object.entries(tasteStory.audio_profile_grid)
+    : [];
+  const comparisonStats = Array.isArray(tasteStory?.comparison_stats) ? tasteStory.comparison_stats : [];
+  const vibeTags = Array.isArray(tasteStory?.vibe_tags) ? tasteStory.vibe_tags : [];
+  const frictionPoints = Array.isArray(tasteStory?.friction_points) ? tasteStory.friction_points : [];
+  const completeness = tasteStory?.data_completeness;
 
   modelInsightsEl.innerHTML = `
+    ${tasteStory ? `
+      <div class="panel" style="margin-bottom:12px;">
+        <div class="insight-meta">
+          <strong>${escapeHtml(tasteStory.user_display_name || "Listener")}</strong> ·
+          <strong>${escapeHtml(tasteStory.micro_archetype || "listener")}</strong> ·
+          <strong>Confidence:</strong> ${escapeHtml(tasteStory.confidence_score ?? "n/a")}%
+        </div>
+        <p>${escapeHtml(tasteStory.opening_narrative || "")}</p>
+        <div class="insight-grid">
+          <div>
+            <h3 style="margin:0 0 8px 0;">Big Three Features</h3>
+            ${bigThree.map((entry) => `
+              <div style="border:1px solid #111111;padding:8px;margin-bottom:8px;background:#fff;">
+                <strong>${escapeHtml(entry.feature)}:</strong> ${escapeHtml(entry.user_value)} (${escapeHtml(entry.percentile)}th percentile)<br />
+                <span class="muted">${escapeHtml(entry.plain_english)}</span>
+                <p style="margin:8px 0 0 0;">${escapeHtml(entry.comparative_insight)}</p>
+                <p style="margin:6px 0 0 0;">${escapeHtml(entry.artist_connection)}</p>
+                <p style="margin:6px 0 0 0;"><strong>Reveals:</strong> ${escapeHtml(entry.personality_reveal)}</p>
+              </div>
+            `).join("") || `<p class="muted">No standout feature story yet.</p>`}
+          </div>
+          <div>
+            <h3 style="margin:0 0 8px 0;">Audio Profile Grid</h3>
+            <div class="bar-list">
+              ${audioGridRows.map(([name, entry]) => `
+                <div style="border:1px solid #111111;padding:8px;background:#fff;">
+                  <strong>${escapeHtml(name)}:</strong> ${escapeHtml(entry.value)}${entry.percentile == null ? "" : ` (${escapeHtml(entry.percentile)}th)`}
+                  <div class="muted" style="margin-top:4px;">${escapeHtml(entry.insight)}</div>
+                </div>
+              `).join("") || `<p class="muted">No supporting feature grid yet.</p>`}
+            </div>
+          </div>
+        </div>
+        <div class="insight-grid" style="margin-top:10px;">
+          <div>
+            <h3 style="margin:0 0 8px 0;">Musical DNA</h3>
+            <p style="margin:0 0 8px 0;">${escapeHtml(tasteStory.musical_dna || "")}</p>
+            <p style="margin:0;">${escapeHtml(tasteStory.artist_feature_bridge || "")}</p>
+          </div>
+          <div>
+            <h3 style="margin:0 0 8px 0;">Compare + Boundaries</h3>
+            <ul style="margin:0 0 10px 18px;padding:0;">
+              ${comparisonStats.map((entry) => `<li>${escapeHtml(entry)}</li>`).join("") || `<li class="muted">No comparison stats yet.</li>`}
+            </ul>
+            ${frictionPoints.length ? `
+              <strong>Friction points</strong>
+              <ul style="margin:6px 0 0 18px;padding:0;">
+                ${frictionPoints.map((entry) => `<li>${escapeHtml(entry)}</li>`).join("")}
+              </ul>
+            ` : ""}
+            ${completeness ? `
+              <p class="muted" style="margin:10px 0 0 0;">
+                Sampled ${escapeHtml(completeness.sample_size_tracks)} tracks · artists ${completeness.has_artists ? "yes" : "no"} · genres ${completeness.has_genres ? "yes" : "no"} · audio features ${completeness.has_audio_features ? "yes" : "estimated"}
+              </p>
+            ` : ""}
+          </div>
+        </div>
+        <div class="insight-chips" style="margin-top:10px;">
+          ${vibeTags.map((tag) => `<span class="insight-chip">${escapeHtml(tag)}</span>`).join("")}
+        </div>
+      </div>
+    ` : ""}
     <div class="insight-meta">
       <strong>Mode:</strong> ${insights.mode} | <strong>Vector dims:</strong> ${insights.vectorDims} | <strong>Updated:</strong> ${updated}<br />
       <strong>Sampled:</strong> ${insights.sampled ?? 0} | <strong>Cached:</strong> ${insights.cached ?? 0} | <strong>Metadata fallback:</strong> ${insights.metadataFallbackCount ?? 0} | <strong>Failures:</strong> ${insights.vectorFailureCount ?? 0}
@@ -1088,7 +1257,7 @@ function renderModelInsights(insights) {
         <div class="insight-chips">
           ${(insights.topGenres ?? [])
             .slice(0, 12)
-            .map((genre) => `<span class="insight-chip">${genre.genre} (${genre.weight.toFixed(2)})</span>`)
+            .map((genre) => `<span class="insight-chip">${escapeHtml(genre.genre)} (${escapeHtml(genre.weight.toFixed(2))})</span>`)
             .join("") || `<span class="muted">No genre data returned by Spotify yet.</span>`}
         </div>
       </div>
@@ -1097,7 +1266,7 @@ function renderModelInsights(insights) {
         <div class="insight-chips">
           ${(insights.topArtists ?? [])
             .slice(0, 8)
-            .map((artist) => `<span class="insight-chip">${artist.name} (${artist.popularity})</span>`)
+            .map((artist) => `<span class="insight-chip">${escapeHtml(artist.name)} (${escapeHtml(artist.popularity)})</span>`)
             .join("") || `<span class="muted">No artist data returned by Spotify yet.</span>`}
         </div>
       </div>

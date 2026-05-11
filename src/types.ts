@@ -7,6 +7,7 @@ export type SpotifyTokens = {
 export type SessionRecord = {
   id: string;
   tokens: SpotifyTokens;
+  spotifyProfile?: SpotifyProfile;
   streamModePreference?: "live" | "batch";
   tasteVector?: number[];
   tasteUpdatedAt?: number;

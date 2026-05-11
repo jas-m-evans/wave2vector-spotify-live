@@ -216,7 +216,7 @@ export async function saveSessionCacheToAccount(accountId: string, session: Sess
     streamModePreference: session.streamModePreference,
     lastSyncStats: session.lastSyncStats,
     artistInsights: session.artistInsights,
-    spotifyProfile: spotifyProfile ?? account.cache?.spotifyProfile,
+    spotifyProfile: spotifyProfile ?? session.spotifyProfile ?? account.cache?.spotifyProfile,
     bootstrapCompletedAt: session.bootstrapCompletedAt,
   };
   account.updatedAt = Date.now();
@@ -224,7 +224,7 @@ export async function saveSessionCacheToAccount(accountId: string, session: Sess
   await persist();
 }
 
-export async function getCachedSessionLike(accountId: string): Promise<Partial<SessionRecord> | null> {
+export async function getCachedSessionLike(accountId: string): Promise<(Partial<SessionRecord> & { spotifyProfile?: SpotifyProfile }) | null> {
   await ensureLoaded();
   const account = accounts.get(accountId);
   if (!account?.cache) {
@@ -237,5 +237,6 @@ export async function getCachedSessionLike(accountId: string): Promise<Partial<S
     bootstrapCompletedAt: account.cache.bootstrapCompletedAt,
     lastSyncStats: account.cache.lastSyncStats,
     artistInsights: account.cache.artistInsights,
+    spotifyProfile: account.cache.spotifyProfile,
   };
 }
