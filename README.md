@@ -1,6 +1,6 @@
-# Wave2Vector Spotify Live
+# Wave2Vector Spotify Mood Identity
 
-A realtime Spotify taste compatibility app where two people join a LiveKit room, compare musical DNA, and get mutual recommendations.
+An async-first Spotify mood identity app where users generate explainable Pulseprint snapshots, create visual InnerRoom artifacts, and optionally produce EchoMerge blends with another user.
 
 This project intentionally avoids downloading or transporting raw Spotify audio. It uses Spotify metadata, now-playing state, preview URLs, cached feature vectors, and Spotify audio features.
 
@@ -17,18 +17,20 @@ This project intentionally avoids downloading or transporting raw Spotify audio.
 - Diversity-aware reranking to reduce near-duplicate suggestions
 - Explainability tags showing closest matching audio features
 - Browser UI for solo flow testing
-- LiveKit-backed two-user room/session mode
+- Mood Identity (Pulseprint) snapshots with confidence and drift signals
+- Deterministic InnerRoom artifact generation + timeline evolution labels
+- Async EchoMerge blend sessions and shareable links
 - Room-level compatibility scoring + grounded taste horoscope summary
 - Room-level mutual recommendation ranking with fairness balancing
 - Local JSON persistence for room events and snapshots
 
 ## Architecture note (important)
 
-Spotify playback streams are not available as raw WAV/PCM for extraction in your app. In this repo, LiveKit is used only as a realtime room/session layer for exchanging app-level state between users.
+Spotify playback streams are not available as raw WAV/PCM for extraction in your app. This repo now prioritizes async mood profiling and generated artifacts.
 
-- Spotify audio is not proxied through LiveKit
+- Spotify audio is not proxied
 - Spotify audio is not recorded or downloaded
-- Compatibility and recommendations are computed from metadata and vectors
+- Mood identity and recommendations are computed from metadata and vectors
 
 ## Quick start
 
@@ -41,28 +43,21 @@ cp .env.example .env
 ```
 
 4. Fill in `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET`.
-5. Keep or edit LiveKit dev defaults in `.env`:
+5. Enable mood mode in `.env`:
 
 ```bash
-LIVEKIT_URL=ws://127.0.0.1:7880
-LIVEKIT_API_KEY=devkey
-LIVEKIT_API_SECRET=secret
+MOOD_PRODUCT_MODE=true
+LEGACY_LIVE_ROOMS=false
 ```
 
-6. Start a local LiveKit server in dev mode (free), for example:
-
-```bash
-docker run --rm -p 7880:7880 -p 7881:7881/tcp -e LIVEKIT_KEYS="devkey: secret" livekit/livekit-server --dev --bind 0.0.0.0
-```
-
-7. Install and run app:
+6. Install and run app:
 
 ```bash
 npm install
 npm run dev
 ```
 
-8. Open `http://localhost:8787`.
+7. Open `http://localhost:8787`.
 
 ## Easy testing (fast path)
 
@@ -192,7 +187,7 @@ Reason tags include examples like:
 
 ## API endpoints
 
-Existing:
+Core endpoints:
 
 - `GET /health`
 - `GET /auth/spotify/login`
@@ -203,21 +198,19 @@ Existing:
 - `GET /api/profile`
 - `POST /api/profile/taste-refresh`
 - `GET /api/recommendations/live?k=5&diversity=0.2&tasteWeight=0.25`
+- `POST /api/mood/sync`
+- `GET /api/mood/latest`
+- `GET /api/mood/timeline?limit=20`
+- `POST /api/rooms/generate`
+- `GET /api/rooms/latest`
+- `GET /api/rooms/:artifactId`
+- `POST /api/blends`
+- `GET /api/blends/:id`
+- `POST /api/share-links`
+- `GET /s/:token`
+- `DELETE /api/share-links/:id`
 
-Room mode:
-
-- `POST /api/livekit/token`
-- `POST /api/rooms/:roomName/share-state`
-- `POST /api/rooms/:roomName/leave`
-- `GET /api/rooms/:roomName/state`
-- `GET /api/rooms/:roomName/compatibility`
-- `GET /api/rooms/:roomName/mutual-recommendations?k=10`
-
-### LiveKit token endpoint
-
-- `POST /api/livekit/token`
-- Body: `{ roomName: string, participantName: string }`
-- Returns: `{ url, roomName, participantName, token }`
+Legacy live-room endpoints remain available only when `LEGACY_LIVE_ROOMS=true`.
 
 ## Local persistence
 

@@ -1,7 +1,7 @@
 {
   "name": "wave2vector-spotify-live",
   "version": "1.0.0",
-  "description": "Spotify live recommendation starter for Wave2Vector",
+  "description": "Spotify mood identity and generative room starter for Wave2Vector",
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx src/server.ts",
