@@ -1,5 +1,3 @@
-import { Room, RoomEvent } from "https://esm.sh/livekit-client@2.15.3";
-
 const debugEl = document.getElementById("debug");
 const demoMode = window.location.pathname.startsWith("/demo");
 const recEl = document.getElementById("recommendations");
@@ -81,11 +79,21 @@ const loginScreenEl = document.getElementById("screen-login");
 const lobbyScreenEl = document.getElementById("screen-lobby");
 const roomScreenEl = document.getElementById("screen-room");
 const toastEl = document.getElementById("toast");
+const moodSyncBtn = document.getElementById("mood-sync-btn");
+const roomGenerateBtn = document.getElementById("room-generate-btn");
+const blendCreateBtn = document.getElementById("blend-create-btn");
+const shareCreateBtn = document.getElementById("share-create-btn");
+const partnerUserIdInput = document.getElementById("partner-user-id");
+const moodLatestEl = document.getElementById("mood-latest");
+const moodTimelineEl = document.getElementById("mood-timeline");
+const roomLatestEl = document.getElementById("room-latest");
+const shareOutputEl = document.getElementById("share-output");
 
 let activeRoomName = "";
 let activeParticipantName = "";
 let spotifyDisplayName = "";
 let livekitRoom = null;
+let livekitClient = null;
 let isAuthenticated = false;
 let lastRoomParticipants = 0;
 let streamMode = "live";
@@ -96,10 +104,21 @@ let previousParticipantNames = new Set();
 let mockMode = false;
 let spotifyConfigReady = true;
 let spotifyMissingEnv = [];
+let moodProductMode = true;
+let legacyLiveRooms = false;
 let localSharedState = {
   tasteProfile: null,
   nowPlayingState: null,
 };
+
+async function ensureLiveKitClient() {
+  if (livekitClient) {
+    return livekitClient;
+  }
+  const module = await import("https://esm.sh/livekit-client@2.15.3");
+  livekitClient = module;
+  return livekitClient;
+}
 
 const MOCK_RECOMMENDATIONS = [
   {
@@ -978,8 +997,23 @@ async function loadConfigStatus() {
 
     const payload = await response.json();
     const spotifyConfig = payload?.spotify ?? {};
+    const flags = payload?.flags ?? {};
     spotifyConfigReady = Boolean(spotifyConfig.configured);
     spotifyMissingEnv = Array.isArray(spotifyConfig.missing) ? spotifyConfig.missing : [];
+    moodProductMode = flags.moodProductMode !== false;
+    legacyLiveRooms = Boolean(flags.legacyLiveRooms);
+
+    if (!legacyLiveRooms) {
+      lobbyViewBtn?.classList.add("hidden");
+      roomScreenEl?.classList.add("hidden");
+      lobbyScreenEl?.classList.add("hidden");
+      if (joinRoomBtn) joinRoomBtn.disabled = true;
+      if (leaveRoomBtn) leaveRoomBtn.disabled = true;
+      if (recomputeRoomBtn) recomputeRoomBtn.disabled = true;
+      if (roomHelpEl) {
+        roomHelpEl.textContent = "Live room mode is in legacy mode. Use Mood Identity Studio for async blend flows.";
+      }
+    }
 
     if (spotifyConfigReady) {
       loginBtn?.removeAttribute("disabled");
@@ -1482,6 +1516,140 @@ async function refresh() {
   logEvent("refresh", "Recommendation refresh complete");
 }
 
+function renderMoodSnapshot(snapshot) {
+  if (!moodLatestEl) return;
+  if (!snapshot) {
+    moodLatestEl.textContent = "Mood snapshot not generated yet.";
+    return;
+  }
+  moodLatestEl.innerHTML = `
+    <strong>Pulseprint</strong>: ${snapshot.currentPhase?.label ?? "unknown"} (${Math.round((snapshot.currentPhase?.score ?? 0) * 100)}%)<br/>
+    <span class="muted">${snapshot.explainSummary ?? ""}</span><br/>
+    <span class="muted">Confidence: ${(snapshot.confidence?.tier ?? "unknown").toUpperCase()} (${snapshot.confidence?.score ?? 0})</span>
+  `;
+}
+
+function renderMoodTimeline(snapshots = []) {
+  if (!moodTimelineEl) return;
+  if (!snapshots.length) {
+    moodTimelineEl.textContent = "Timeline appears after snapshots are created.";
+    return;
+  }
+  moodTimelineEl.innerHTML = snapshots
+    .slice(0, 6)
+    .map((item) => `<div class="history-item"><strong>${new Date(item.computedAt).toLocaleString()}</strong> — ${item.currentPhase?.label ?? "phase"}${item.drift?.signals?.length ? ` · ${item.drift.signals[0]}` : ""}</div>`)
+    .join("");
+}
+
+function renderRoomArtifact(artifact, assets = []) {
+  if (!roomLatestEl) return;
+  if (!artifact) {
+    roomLatestEl.textContent = "InnerRoom artifact details appear here.";
+    return;
+  }
+  const primary = assets.find((asset) => asset.id === artifact.primaryAssetId) ?? assets[0];
+  roomLatestEl.innerHTML = `
+    <strong>InnerRoom</strong>: ${artifact.evolutionLabel ?? "Generated"}<br/>
+    <span class="muted">${artifact.narrativeTags?.join(" · ") ?? ""}</span>
+    ${primary?.storageUrl ? `<div style="margin-top:10px;"><img src="${primary.storageUrl}" alt="InnerRoom artifact" style="max-width:280px;border-radius:12px;border:1px solid rgba(255,255,255,.18);" /></div>` : ""}
+  `;
+}
+
+async function refreshMoodStudio() {
+  if (!moodProductMode) {
+    return;
+  }
+  try {
+    const [latestRes, timelineRes, roomRes] = await Promise.all([
+      fetch("/api/mood/latest"),
+      fetch("/api/mood/timeline?limit=12"),
+      fetch("/api/rooms/latest"),
+    ]);
+    const latestPayload = await latestRes.json().catch(() => ({}));
+    const timelinePayload = await timelineRes.json().catch(() => ({}));
+    const roomPayload = await roomRes.json().catch(() => ({}));
+    renderMoodSnapshot(latestRes.ok ? latestPayload.snapshot : null);
+    renderMoodTimeline(timelineRes.ok ? timelinePayload.snapshots : []);
+    renderRoomArtifact(roomRes.ok ? roomPayload.artifact : null, roomRes.ok ? roomPayload.assets : []);
+  } catch (error) {
+    logEvent("mood", "refreshMoodStudio failed", error);
+  }
+}
+
+async function syncMoodIdentity() {
+  const response = await fetch("/api/mood/sync", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ force: true }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error ?? "Mood sync failed");
+  }
+  renderMoodSnapshot(payload.snapshot);
+  await refreshMoodStudio();
+}
+
+async function generateInnerRoomArtifact() {
+  const response = await fetch("/api/rooms/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ force: true }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error ?? "InnerRoom generation failed");
+  }
+  renderRoomArtifact(payload.artifact, payload.assets);
+  await refreshMoodStudio();
+  return payload.artifact;
+}
+
+async function createEchoMergeBlend() {
+  const partnerUserId = partnerUserIdInput?.value?.trim();
+  if (!partnerUserId) {
+    throw new Error("Enter a partner user ID to create EchoMerge.");
+  }
+  const response = await fetch("/api/blends", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ partnerUserId }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error ?? "EchoMerge creation failed");
+  }
+  if (shareOutputEl) {
+    shareOutputEl.innerHTML = `<strong>EchoMerge Ready</strong>: ${payload.blend?.id ?? "unknown"}${payload.blend?.artifactId ? ` · artifact ${payload.blend.artifactId}` : ""}`;
+  }
+  return payload.blend;
+}
+
+async function createShareFromLatestRoom() {
+  const roomRes = await fetch("/api/rooms/latest");
+  const roomPayload = await roomRes.json().catch(() => ({}));
+  if (!roomRes.ok || !roomPayload?.artifact?.id) {
+    throw new Error(roomPayload.error ?? "Generate an InnerRoom first.");
+  }
+  const response = await fetch("/api/share-links", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      targetType: "user_room",
+      targetId: roomPayload.artifact.id,
+      visibility: "unlisted",
+      expiresInHours: 24 * 7,
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error ?? "Failed to create share link.");
+  }
+  if (shareOutputEl) {
+    shareOutputEl.innerHTML = `<strong>Share Link</strong>: <a href="${payload.url}" target="_blank" rel="noopener noreferrer">${payload.url}</a>`;
+  }
+}
+
 async function bootstrapSync(force = false) {
   logEvent("sync", "Bootstrap sync requested", { force });
   resetSyncLog();
@@ -1670,6 +1838,9 @@ async function checkAuth() {
 }
 
 async function refreshRoomPanels() {
+  if (!legacyLiveRooms) {
+    return;
+  }
   logEvent("rooms", "Refreshing room panels", { activeRoomName });
   await loadActiveRooms();
 
@@ -1801,6 +1972,10 @@ async function ensureTasteProfileReady() {
 }
 
 async function joinRoom() {
+  if (!legacyLiveRooms) {
+    setRoomStatus("Live room mode is deprecated. Use EchoMerge in Mood Identity Studio.");
+    return;
+  }
   const roomName = roomNameInput.value.trim();
   const participantName = participantNameInput.value.trim() || spotifyDisplayName;
 
@@ -1836,6 +2011,7 @@ async function joinRoom() {
     await livekitRoom.disconnect();
   }
 
+  const { Room, RoomEvent } = await ensureLiveKitClient();
   livekitRoom = new Room({ adaptiveStream: true, dynacast: true });
   livekitRoom.on(RoomEvent.ParticipantConnected, () => {
     refreshRoomPanels().catch((error) => setDebug(String(error)));
@@ -1857,6 +2033,9 @@ async function joinRoom() {
 }
 
 async function leaveRoom() {
+  if (!legacyLiveRooms) {
+    return;
+  }
   if (!activeRoomName) {
     return;
   }
@@ -2114,6 +2293,42 @@ refreshHistoryBtn?.addEventListener("click", () => {
   loadRoomHistory().catch((error) => setDebug(String(error)));
 });
 
+moodSyncBtn?.addEventListener("click", async () => {
+  try {
+    await syncMoodIdentity();
+    setSyncStatus("Pulseprint sync complete.");
+  } catch (error) {
+    setSyncStatus(error instanceof Error ? error.message : String(error));
+  }
+});
+
+roomGenerateBtn?.addEventListener("click", async () => {
+  try {
+    await generateInnerRoomArtifact();
+    setSyncStatus("InnerRoom generated.");
+  } catch (error) {
+    setSyncStatus(error instanceof Error ? error.message : String(error));
+  }
+});
+
+blendCreateBtn?.addEventListener("click", async () => {
+  try {
+    const blend = await createEchoMergeBlend();
+    setSyncStatus(`EchoMerge ready (${blend.id}).`);
+  } catch (error) {
+    setSyncStatus(error instanceof Error ? error.message : String(error));
+  }
+});
+
+shareCreateBtn?.addEventListener("click", async () => {
+  try {
+    await createShareFromLatestRoom();
+    setSyncStatus("Share link created.");
+  } catch (error) {
+    setSyncStatus(error instanceof Error ? error.message : String(error));
+  }
+});
+
 accountRegisterBtn?.addEventListener("click", async () => {
   try {
     if (currentAccount) {
@@ -2197,8 +2412,13 @@ landingGoLoginBtn?.addEventListener("click", () => {
 });
 
 landingGoLobbyBtn?.addEventListener("click", () => {
-  setActiveScreen("lobby");
-  logEvent("ui", "Landing CTA to Lobby");
+  if (legacyLiveRooms) {
+    setActiveScreen("lobby");
+    logEvent("ui", "Landing CTA to Lobby");
+    return;
+  }
+  setActiveScreen("home");
+  logEvent("ui", "Landing CTA to Mood Studio");
 });
 
 recEl.addEventListener("mouseover", (event) => {
@@ -2258,7 +2478,9 @@ loadConfigStatus().catch((error) => {
   logEvent("config", "Config status load failed", error);
 });
 
-refreshRoomPanels().catch((error) => setDebug(String(error)));
+if (legacyLiveRooms) {
+  refreshRoomPanels().catch((error) => setDebug(String(error)));
+}
 updateControlLabels();
 setSyncPhaseState("auth");
 setFeatureGate(true);
@@ -2272,9 +2494,14 @@ if (demoMode) {
   accountGateEl?.classList.add("hidden");
   setGlobalAccountBanner(null);
 }
-loadActiveRooms().catch(() => {
-  // Active room directory is optional.
-});
-loadRoomHistory().catch(() => {
-  // Room history panel is optional.
+if (legacyLiveRooms) {
+  loadActiveRooms().catch(() => {
+    // Active room directory is optional.
+  });
+  loadRoomHistory().catch(() => {
+    // Room history panel is optional.
+  });
+}
+refreshMoodStudio().catch(() => {
+  // Mood studio panels are optional.
 });

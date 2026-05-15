@@ -20,6 +20,10 @@ services:
         sync: false
       - key: SPOTIFY_REDIRECT_URI
         sync: false
+      - key: MOOD_PRODUCT_MODE
+        value: "true"
+      - key: LEGACY_LIVE_ROOMS
+        value: "false"
       - key: LIVEKIT_URL
         sync: false
       - key: LIVEKIT_API_KEY

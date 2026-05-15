@@ -233,3 +233,107 @@ export type NicheScore = {
   percentileText: string;
   verdict: string;
 };
+
+export type MoodConfidenceTier = "low" | "medium" | "high";
+
+export type MoodTraits = {
+  intensity: number;
+  warmth: number;
+  texturalFocus: number;
+  dynamism: number;
+  introspection: number;
+  verbalFocus: number;
+};
+
+export type MoodPhase = {
+  label: "kinetic" | "reflective" | "grounded" | "luminous" | "volatile";
+  score: number;
+};
+
+export type MoodDrift = {
+  driftScore: number;
+  changed: boolean;
+  signals: string[];
+};
+
+export type MoodProfileSnapshot = {
+  id: string;
+  userId: string;
+  computedAt: number;
+  stableTraits: MoodTraits;
+  currentPhase: MoodPhase;
+  drift: MoodDrift;
+  confidence: {
+    tier: MoodConfidenceTier;
+    score: number;
+    rationale: string[];
+  };
+  explainSummary: string;
+  baseVector: number[];
+  identityTags: string[];
+};
+
+export type RoomThemeTokens = {
+  palette: string[];
+  lighting: "soft" | "balanced" | "dramatic";
+  materials: string[];
+  motifs: string[];
+  anchorObjects: string[];
+};
+
+export type GeneratedAsset = {
+  id: string;
+  artifactId: string;
+  variant: "primary" | "thumbnail";
+  storageUrl: string;
+  thumbUrl?: string;
+  promptVersion: string;
+  modelName: string;
+  generationCost: number;
+  createdAt: number;
+};
+
+export type RoomArtifact = {
+  id: string;
+  userId: string;
+  snapshotId: string;
+  seed: string;
+  styleVersion: string;
+  status: "queued" | "ready" | "failed";
+  promptTemplate: string;
+  themeTokens: RoomThemeTokens;
+  narrativeTags: string[];
+  evolutionLabel?: string;
+  createdAt: number;
+  primaryAssetId?: string;
+};
+
+export type BlendSessionStatus = "queued" | "processing" | "ready" | "failed";
+
+export type BlendSession = {
+  id: string;
+  initiatorUserId: string;
+  partnerUserId: string;
+  status: BlendSessionStatus;
+  createdAt: number;
+  completedAt?: number;
+  blendVector?: number[];
+  artifactId?: string;
+  explainability?: {
+    fromA: string[];
+    fromB: string[];
+    bridge: string[];
+  };
+};
+
+export type ShareLink = {
+  id: string;
+  ownerUserId: string;
+  targetType: "user_room" | "blend_room";
+  targetId: string;
+  visibility: "public" | "unlisted";
+  token: string;
+  createdAt: number;
+  expiresAt?: number;
+  revokedAt?: number;
+};

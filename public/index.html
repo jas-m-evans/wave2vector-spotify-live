@@ -1020,7 +1020,7 @@
         <div class="header-top">
           <div class="brand">
             <h1>Wave2Vector</h1>
-            <p class="muted">Real-time music compatibility in shared Spotify rooms.</p>
+            <p class="muted">Mood identity from your listening patterns.</p>
           </div>
           <button id="spotify-badge" class="spotify-badge" title="Click to connect Spotify">
             <span class="spotify-badge-dot"></span>
@@ -1049,11 +1049,11 @@
       <div id="screen-home" class="screen active">
         <section class="panel glass home-hero reveal">
           <span class="eyebrow">Spotify taste intelligence</span>
-          <h2>Map your Spotify taste, then compare it live with friends.</h2>
-          <p class="muted">Wave2Vector turns your listening history into a taste profile, opens shared rooms, and updates compatibility + mutual discovery in real time while you listen.</p>
+          <h2>Your music taste has a shape. See it evolve.</h2>
+          <p class="muted">Wave2Vector turns your listening history into Pulseprint mood identity snapshots and a visual InnerRoom that updates over time.</p>
           <div class="landing-actions">
             <button id="landing-go-login" class="button-primary cta-pulse">Create Account</button>
-            <button id="landing-go-lobby" class="button-secondary">Open Lobby</button>
+            <button id="landing-go-lobby" class="button-secondary">Open Mood Studio</button>
           </div>
         </section>
 
@@ -1070,11 +1070,11 @@
             </div>
             <div>
               <h3>What happens in seconds</h3>
-              <p class="muted">Connect Spotify, enter a room, and instantly see where your music overlap is strongest. The app keeps updating as room state changes, so discovery stays social instead of static.</p>
+              <p class="muted">Connect Spotify, sync, reveal your emotional center, generate your InnerRoom, and track how your listening identity changes week to week.</p>
               <div class="trust-row">
                 <div class="trust-pill">Spotify OAuth only</div>
                 <div class="trust-pill">No raw audio capture</div>
-                <div class="trust-pill">Real-time room sync</div>
+                <div class="trust-pill">Async-first generation</div>
               </div>
             </div>
           </div>
@@ -1131,6 +1131,31 @@
         <section class="panel reveal" data-requires-account="true">
           <h2>Taste insights</h2>
           <div id="model-insights"><p class="muted">Insights appear after a successful sync.</p></div>
+        </section>
+
+        <section class="panel reveal" data-requires-account="true">
+          <h2>Mood Identity Studio</h2>
+          <p class="muted">Generate Pulseprint snapshots, build your InnerRoom artifact, and create async EchoMerge blends.</p>
+          <div class="landing-actions">
+            <button id="mood-sync-btn" class="button-primary">Sync Mood Identity</button>
+            <button id="room-generate-btn">Generate InnerRoom</button>
+          </div>
+          <div class="control-grid">
+            <label>
+              EchoMerge Partner User ID
+              <input id="partner-user-id" placeholder="aid:..." />
+            </label>
+            <div>
+              <button id="blend-create-btn">Create EchoMerge</button>
+            </div>
+            <div>
+              <button id="share-create-btn">Create Share Link</button>
+            </div>
+          </div>
+          <div id="mood-latest" class="muted">Mood snapshot not generated yet.</div>
+          <div id="mood-timeline" class="muted">Timeline appears after snapshots are created.</div>
+          <div id="room-latest" class="muted">InnerRoom artifact details appear here.</div>
+          <div id="share-output" class="muted">Share link output appears here.</div>
         </section>
 
         <section class="panel reveal" data-requires-account="true">

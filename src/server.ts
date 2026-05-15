@@ -36,6 +36,24 @@ import { createLiveKitAccessToken } from "./livekit.js";
 import { computeMutualRecommendations } from "./mutualRecommendations.js";
 import { recommendNearest } from "./recommend.js";
 import { buildTasteStory, buildTasteHoroscope } from "./tasteInsights.js";
+import { computeMoodSnapshot } from "./moodEngine.js";
+import {
+  attachAssetToArtifact,
+  createBlendSession,
+  createShareLink,
+  getBlendSession,
+  getLatestMoodSnapshot,
+  getLatestRoomArtifact,
+  getRoomArtifactById,
+  listMoodSnapshots,
+  resolveShareToken,
+  revokeShareLink,
+  saveMoodSnapshot,
+  saveRoomArtifact,
+  setArtifactPrimaryAsset,
+  updateBlendSession,
+} from "./moodStore.js";
+import { generateBlendRoom, generateInnerRoom } from "./innerRoom.js";
 import {
   createSessionId,
   createStateToken,
@@ -53,13 +71,22 @@ import {
   spotifyLoginUrl,
 } from "./spotify.js";
 import { loadLibraryFromDisk, persistLibraryToDisk } from "./store.js";
-import { AppAccountPublic, SessionRecord, SpotifyTokens, TasteCapsule, TrackFeatureVector } from "./types.js";
+import {
+  AppAccountPublic,
+  MoodProfileSnapshot,
+  SessionRecord,
+  SpotifyTokens,
+  TasteCapsule,
+  TrackFeatureVector,
+} from "./types.js";
 
 dotenv.config();
 
 const port = Number(process.env.PORT ?? 8787);
 const isProduction = process.env.NODE_ENV === "production";
 const cookieSecure = (process.env.COOKIE_SECURE ?? (isProduction ? "true" : "false")) === "true";
+const moodProductMode = (process.env.MOOD_PRODUCT_MODE ?? "true") === "true";
+const legacyLiveRooms = (process.env.LEGACY_LIVE_ROOMS ?? "false") === "true";
 const app = express();
 
 app.use(cors());
@@ -259,6 +286,57 @@ const appAccountAuthSchema = z.object({
 });
 
 const appAccountRegisterSchema = appAccountAuthSchema;
+const roomGenerateBodySchema = z.object({
+  force: z.boolean().optional(),
+});
+const blendCreateBodySchema = z.object({
+  partnerUserId: z.string().trim().min(1),
+});
+const shareLinkCreateBodySchema = z.object({
+  targetType: z.enum(["user_room", "blend_room"]),
+  targetId: z.string().trim().min(1),
+  visibility: z.enum(["public", "unlisted"]).default("unlisted"),
+  expiresInHours: z.number().min(1).max(24 * 30).optional(),
+});
+
+function getMoodActorUserId(params: {
+  account: AppAccount | null;
+  session: SessionRecord | null;
+  fallbackSid: string | null;
+}): string {
+  if (params.account?.id) return `aid:${params.account.id}`;
+  if (params.session?.spotifyProfile?.id) return `spotify:${params.session.spotifyProfile.id}`;
+  if (params.session?.id) return `sid:${params.session.id}`;
+  if (params.fallbackSid) return `sid:${params.fallbackSid}`;
+  return "anonymous";
+}
+
+async function buildWindowVector(
+  accessToken: string,
+  tokens: SpotifyTokens,
+  window: "short_term" | "medium_term" | "long_term",
+  limit = 14,
+): Promise<{ vector: number[]; sampled: number; metadataFallbackCount: number }> {
+  const tracks = await fetchTopTracks(accessToken, limit, window);
+  const vectors: number[][] = [];
+  let metadataFallbackCount = 0;
+  for (const track of tracks) {
+    try {
+      const cached = await cacheTrack(track.trackId, tokens, { fallbackMetadata: track });
+      vectors.push(cached.vector);
+      if (cached.source === "metadata-fallback") {
+        metadataFallbackCount += 1;
+      }
+    } catch {
+      // ignore unavailable tracks for this window
+    }
+  }
+  return {
+    vector: averageVectors(vectors) ?? [],
+    sampled: vectors.length,
+    metadataFallbackCount,
+  };
+}
 
 function extractSessionId(req: express.Request): string | null {
   const sid = req.cookies.sid as string | undefined;
@@ -1242,6 +1320,10 @@ app.get("/api/config/status", (_req, res) => {
       configured: missing.length === 0,
       missing,
     },
+    flags: {
+      moodProductMode,
+      legacyLiveRooms,
+    },
   });
 });
 
@@ -1637,7 +1719,369 @@ app.get("/api/sync/progress", async (req, res) => {
   }
 });
 
+app.post("/api/mood/sync", async (req, res) => {
+  try {
+    if (!moodProductMode) {
+      return res.status(409).json({ error: "Mood mode is disabled." });
+    }
+    const session = await getActiveSession(req);
+    const account = await getActiveAccount(req);
+    const userId = getMoodActorUserId({
+      account,
+      session,
+      fallbackSid: extractSessionId(req),
+    });
+
+    const body = roomGenerateBodySchema.safeParse(req.body ?? {});
+    const force = body.success ? body.data.force ?? false : false;
+    if (!force && session.bootstrapCompletedAt && session.tasteVector?.length) {
+      const existing = await getLatestMoodSnapshot(userId);
+      if (existing) {
+        return res.json({
+          queued: false,
+          reused: true,
+          snapshot: existing,
+        });
+      }
+    }
+
+    const [longTerm, mediumTerm, shortTerm] = await Promise.all([
+      buildWindowVector(session.tokens.accessToken, session.tokens, "long_term"),
+      buildWindowVector(session.tokens.accessToken, session.tokens, "medium_term"),
+      buildWindowVector(session.tokens.accessToken, session.tokens, "short_term"),
+    ]);
+    const sampledCount = longTerm.sampled + mediumTerm.sampled + shortTerm.sampled;
+    const metadataFallbackCount = longTerm.metadataFallbackCount + mediumTerm.metadataFallbackCount + shortTerm.metadataFallbackCount;
+    const sourceDiversity =
+      Number(longTerm.sampled > 0) + Number(mediumTerm.sampled > 0) + Number(shortTerm.sampled > 0) + Number(Boolean(session.artistInsights?.topGenres?.length)) + Number(Boolean(session.artistInsights?.topArtists?.length));
+
+    const longVector = longTerm.vector.length ? longTerm.vector : session.tasteVector ?? [];
+    const mediumVector = mediumTerm.vector.length ? mediumTerm.vector : longVector;
+    const shortVector = shortTerm.vector.length ? shortTerm.vector : mediumVector;
+    if (!longVector.length) {
+      return res.status(400).json({ error: "Taste profile not available. Run bootstrap sync first." });
+    }
+
+    const snapshot = computeMoodSnapshot({
+      userId,
+      longTermVector: longVector,
+      mediumTermVector: mediumVector,
+      shortTermVector: shortVector,
+      sampledCount,
+      sourceDiversity,
+      metadataFallbackRatio: sampledCount > 0 ? metadataFallbackCount / sampledCount : 1,
+      recencyCompleteness: shortTerm.sampled > 0 ? 1 : 0.3,
+    });
+    await saveMoodSnapshot(snapshot);
+    return res.json({
+      queued: false,
+      reused: false,
+      snapshot,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(401).json({ error: message });
+  }
+});
+
+app.get("/api/mood/latest", async (req, res) => {
+  try {
+    if (!moodProductMode) {
+      return res.status(409).json({ error: "Mood mode is disabled." });
+    }
+    const account = await getActiveAccount(req);
+    let session: SessionRecord | null = null;
+    try {
+      session = await getActiveSession(req);
+    } catch {
+      session = null;
+    }
+    const userId = getMoodActorUserId({ account, session, fallbackSid: extractSessionId(req) });
+    const snapshot = await getLatestMoodSnapshot(userId);
+    if (!snapshot) {
+      return res.status(404).json({ error: "No mood snapshot yet. Run POST /api/mood/sync first." });
+    }
+    return res.json({ snapshot });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(401).json({ error: message });
+  }
+});
+
+app.get("/api/mood/timeline", async (req, res) => {
+  try {
+    if (!moodProductMode) {
+      return res.status(409).json({ error: "Mood mode is disabled." });
+    }
+    const account = await getActiveAccount(req);
+    let session: SessionRecord | null = null;
+    try {
+      session = await getActiveSession(req);
+    } catch {
+      session = null;
+    }
+    const userId = getMoodActorUserId({ account, session, fallbackSid: extractSessionId(req) });
+    const limit = Math.max(1, Math.min(40, Number(req.query.limit ?? 20)));
+    const snapshots = await listMoodSnapshots(userId, limit);
+    return res.json({ userId, snapshots });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(401).json({ error: message });
+  }
+});
+
+app.post("/api/rooms/generate", async (req, res) => {
+  try {
+    if (!moodProductMode) {
+      return res.status(409).json({ error: "Mood mode is disabled." });
+    }
+    const account = await getActiveAccount(req);
+    let session: SessionRecord | null = null;
+    try {
+      session = await getActiveSession(req);
+    } catch {
+      session = null;
+    }
+    const userId = getMoodActorUserId({ account, session, fallbackSid: extractSessionId(req) });
+    const latest = await getLatestMoodSnapshot(userId);
+    if (!latest) {
+      return res.status(400).json({ error: "Run mood sync before generating a room." });
+    }
+    const generated = generateInnerRoom({
+      userId,
+      snapshot: latest,
+    });
+    await saveRoomArtifact(generated.artifact);
+    await attachAssetToArtifact(generated.asset);
+    await setArtifactPrimaryAsset(generated.artifact.id, userId, generated.asset.id);
+    const stored = await getRoomArtifactById(generated.artifact.id);
+    return res.json({
+      queued: false,
+      artifact: stored.artifact,
+      assets: stored.assets,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(400).json({ error: message });
+  }
+});
+
+app.get("/api/rooms/latest", async (req, res) => {
+  try {
+    if (!moodProductMode) {
+      return res.status(409).json({ error: "Mood mode is disabled." });
+    }
+    const account = await getActiveAccount(req);
+    let session: SessionRecord | null = null;
+    try {
+      session = await getActiveSession(req);
+    } catch {
+      session = null;
+    }
+    const userId = getMoodActorUserId({ account, session, fallbackSid: extractSessionId(req) });
+    const latest = await getLatestRoomArtifact(userId);
+    if (!latest.artifact) {
+      return res.status(404).json({ error: "No room artifact yet. Run POST /api/rooms/generate first." });
+    }
+    return res.json(latest);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(401).json({ error: message });
+  }
+});
+
+app.get("/api/rooms/:artifactId", async (req, res) => {
+  try {
+    if (!moodProductMode) {
+      return res.status(409).json({ error: "Mood mode is disabled." });
+    }
+    const record = await getRoomArtifactById(req.params.artifactId);
+    if (!record.artifact) {
+      return res.status(404).json({ error: "Room artifact not found." });
+    }
+    return res.json(record);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(400).json({ error: message });
+  }
+});
+
+app.post("/api/blends", async (req, res) => {
+  try {
+    if (!moodProductMode) {
+      return res.status(409).json({ error: "Mood mode is disabled." });
+    }
+    const body = blendCreateBodySchema.parse(req.body ?? {});
+    const account = await getActiveAccount(req);
+    let session: SessionRecord | null = null;
+    try {
+      session = await getActiveSession(req);
+    } catch {
+      session = null;
+    }
+    const initiatorUserId = getMoodActorUserId({ account, session, fallbackSid: extractSessionId(req) });
+    const selfMood = await getLatestMoodSnapshot(initiatorUserId);
+    const partnerMood = await getLatestMoodSnapshot(body.partnerUserId);
+    if (!selfMood || !partnerMood) {
+      return res.status(400).json({ error: "Both users need mood snapshots before blending." });
+    }
+
+    const blendVector = selfMood.baseVector.length && partnerMood.baseVector.length && selfMood.baseVector.length === partnerMood.baseVector.length
+      ? selfMood.baseVector.map((value, idx) => Number((((value ?? 0.5) + (partnerMood.baseVector[idx] ?? 0.5)) / 2).toFixed(4)))
+      : selfMood.baseVector;
+
+    const blend = await createBlendSession({
+      initiatorUserId,
+      partnerUserId: body.partnerUserId,
+      blendVector,
+    });
+    await updateBlendSession(blend.id, { status: "processing" });
+
+    const generated = generateBlendRoom({
+      blendId: blend.id,
+      initiatorUserId,
+      partnerUserId: body.partnerUserId,
+      blendVector,
+      tagsFromA: selfMood.identityTags,
+      tagsFromB: partnerMood.identityTags,
+    });
+    await saveRoomArtifact(generated.artifact);
+    await attachAssetToArtifact(generated.asset);
+    await setArtifactPrimaryAsset(generated.artifact.id, generated.artifact.userId, generated.asset.id);
+    const updated = await updateBlendSession(blend.id, {
+      status: "ready",
+      artifactId: generated.artifact.id,
+      completedAt: Date.now(),
+      explainability: {
+        fromA: selfMood.identityTags.slice(0, 2),
+        fromB: partnerMood.identityTags.slice(0, 2),
+        bridge: ["shared mood vector midpoint", "retained symbolic anchors"],
+      },
+    });
+    return res.json({ blend: updated });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(400).json({ error: message });
+  }
+});
+
+app.get("/api/blends/:id", async (req, res) => {
+  try {
+    if (!moodProductMode) {
+      return res.status(409).json({ error: "Mood mode is disabled." });
+    }
+    const blend = await getBlendSession(req.params.id);
+    if (!blend) {
+      return res.status(404).json({ error: "Blend session not found." });
+    }
+    const artifact = blend.artifactId ? await getRoomArtifactById(blend.artifactId) : { artifact: null, assets: [] };
+    return res.json({ blend, artifact: artifact.artifact, assets: artifact.assets });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(400).json({ error: message });
+  }
+});
+
+app.post("/api/share-links", async (req, res) => {
+  try {
+    if (!moodProductMode) {
+      return res.status(409).json({ error: "Mood mode is disabled." });
+    }
+    const body = shareLinkCreateBodySchema.parse(req.body ?? {});
+    const account = await getActiveAccount(req);
+    let session: SessionRecord | null = null;
+    try {
+      session = await getActiveSession(req);
+    } catch {
+      session = null;
+    }
+    const ownerUserId = getMoodActorUserId({ account, session, fallbackSid: extractSessionId(req) });
+    const link = await createShareLink({
+      ownerUserId,
+      targetType: body.targetType,
+      targetId: body.targetId,
+      visibility: body.visibility,
+      expiresAt: body.expiresInHours ? Date.now() + body.expiresInHours * 60 * 60 * 1000 : undefined,
+    });
+    return res.json({
+      link,
+      url: `/s/${link.token}`,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(400).json({ error: message });
+  }
+});
+
+app.delete("/api/share-links/:id", async (req, res) => {
+  try {
+    if (!moodProductMode) {
+      return res.status(409).json({ error: "Mood mode is disabled." });
+    }
+    const account = await getActiveAccount(req);
+    let session: SessionRecord | null = null;
+    try {
+      session = await getActiveSession(req);
+    } catch {
+      session = null;
+    }
+    const ownerUserId = getMoodActorUserId({ account, session, fallbackSid: extractSessionId(req) });
+    const ok = await revokeShareLink(req.params.id, ownerUserId);
+    if (!ok) {
+      return res.status(404).json({ error: "Share link not found." });
+    }
+    return res.json({ ok: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(400).json({ error: message });
+  }
+});
+
+app.get("/s/:token", async (req, res) => {
+  try {
+    if (!moodProductMode) {
+      return res.status(404).send("Not found");
+    }
+    const link = await resolveShareToken(req.params.token);
+    if (!link) {
+      return res.status(404).send("Share link is invalid or expired.");
+    }
+    if (link.targetType === "user_room") {
+      const artifact = await getRoomArtifactById(link.targetId);
+      if (!artifact.artifact) {
+        return res.status(404).send("Shared room artifact not found.");
+      }
+      return res.json({
+        type: "user_room",
+        link,
+        artifact: artifact.artifact,
+        assets: artifact.assets,
+      });
+    }
+    const blend = await getBlendSession(link.targetId);
+    if (!blend) {
+      return res.status(404).send("Shared blend artifact not found.");
+    }
+    const artifact = blend.artifactId ? await getRoomArtifactById(blend.artifactId) : { artifact: null, assets: [] };
+    return res.json({
+      type: "blend_room",
+      link,
+      blend,
+      artifact: artifact.artifact,
+      assets: artifact.assets,
+    });
+  } catch {
+    return res.status(400).send("Invalid share link.");
+  }
+});
+
 app.post("/api/livekit/token", async (req, res) => {
+  if (!legacyLiveRooms) {
+    return res.status(410).json({
+      error: "Live room mode is deprecated. Use mood snapshots and async blend sessions instead.",
+      deprecated: true,
+    });
+  }
   try {
     const actor = await getRoomActor(req);
     const body = liveKitTokenBodySchema.parse(req.body);
@@ -1661,6 +2105,9 @@ app.post("/api/livekit/token", async (req, res) => {
 });
 
 app.post("/api/rooms/:roomName/share-state", async (req, res) => {
+  if (!legacyLiveRooms) {
+    return res.status(410).json({ error: "Live room mode is deprecated.", deprecated: true });
+  }
   try {
     const actor = await getRoomActor(req);
     const session = actor.session;
@@ -1754,6 +2201,9 @@ app.post("/api/rooms/:roomName/share-state", async (req, res) => {
 });
 
 app.post("/api/rooms/:roomName/leave", async (req, res) => {
+  if (!legacyLiveRooms) {
+    return res.status(410).json({ error: "Live room mode is deprecated.", deprecated: true });
+  }
   try {
     const actor = await getRoomActor(req);
     const roomName = cleanRoomName(req.params.roomName);
@@ -1769,6 +2219,9 @@ app.post("/api/rooms/:roomName/leave", async (req, res) => {
 });
 
 app.post("/api/rooms/:roomName/publish", async (req, res) => {
+  if (!legacyLiveRooms) {
+    return res.status(410).json({ error: "Live room mode is deprecated.", deprecated: true });
+  }
   try {
     await getRoomActor(req);
     const roomName = cleanRoomName(req.params.roomName);
@@ -1786,6 +2239,9 @@ app.post("/api/rooms/:roomName/publish", async (req, res) => {
 });
 
 app.get("/api/rooms/active", async (req, res) => {
+  if (!legacyLiveRooms) {
+    return res.status(410).json({ error: "Live room mode is deprecated.", deprecated: true });
+  }
   try {
     const actor = await getRoomActor(req);
     const limit = Math.max(1, Math.min(30, Number(req.query.limit ?? 20)));
@@ -1840,6 +2296,9 @@ app.get("/api/rooms/active", async (req, res) => {
 });
 
 app.get("/api/rooms/:roomName/history", async (req, res) => {
+  if (!legacyLiveRooms) {
+    return res.status(410).json({ error: "Live room mode is deprecated.", deprecated: true });
+  }
   try {
     await getRoomActor(req);
     const roomName = cleanRoomName(req.params.roomName);
@@ -1853,6 +2312,9 @@ app.get("/api/rooms/:roomName/history", async (req, res) => {
 });
 
 app.post("/api/rooms/:roomName/resume", async (req, res) => {
+  if (!legacyLiveRooms) {
+    return res.status(410).json({ error: "Live room mode is deprecated.", deprecated: true });
+  }
   try {
     await getRoomActor(req);
     const roomName = cleanRoomName(req.params.roomName);
@@ -1872,6 +2334,9 @@ app.post("/api/rooms/:roomName/resume", async (req, res) => {
 });
 
 app.get("/api/rooms/:roomName/state", async (req, res) => {
+  if (!legacyLiveRooms) {
+    return res.status(410).json({ error: "Live room mode is deprecated.", deprecated: true });
+  }
   try {
     await getRoomActor(req);
     const roomName = cleanRoomName(req.params.roomName);
@@ -1884,6 +2349,9 @@ app.get("/api/rooms/:roomName/state", async (req, res) => {
 });
 
 app.get("/api/rooms/:roomName/compatibility", async (req, res) => {
+  if (!legacyLiveRooms) {
+    return res.status(410).json({ error: "Live room mode is deprecated.", deprecated: true });
+  }
   try {
     await getRoomActor(req);
     const roomName = cleanRoomName(req.params.roomName);
@@ -1923,6 +2391,9 @@ app.get("/api/rooms/:roomName/compatibility", async (req, res) => {
 });
 
 app.get("/api/rooms/:roomName/mutual-recommendations", async (req, res) => {
+  if (!legacyLiveRooms) {
+    return res.status(410).json({ error: "Live room mode is deprecated.", deprecated: true });
+  }
   try {
     await getRoomActor(req);
     const roomName = cleanRoomName(req.params.roomName);
@@ -2178,6 +2649,9 @@ app.get("/api/recommendations/live", async (req, res) => {
 // ── Feature 1: Taste Twin Match Card ─────────────────────────────────────────
 
 app.get("/api/rooms/:roomName/match-card", async (req, res) => {
+  if (!legacyLiveRooms) {
+    return res.status(410).json({ error: "Live room mode is deprecated.", deprecated: true });
+  }
   try {
     await getRoomActor(req);
     const roomName = cleanRoomName(req.params.roomName);
