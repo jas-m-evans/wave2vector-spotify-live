@@ -694,7 +694,7 @@ function updateShareUrlInput(roomName) {
   }
   roomShareUrlInput.value = roomName
     ? getShareRoomUrl(roomName)
-    : "Create or join a room to generate a share link";
+    : "Enter a room name to generate a share link";
 }
 
 function buildShareEmailMessage(roomName) {
@@ -950,7 +950,7 @@ function renderAccountStatus(payload) {
   accountLogoutBtn?.classList.remove("hidden");
   const cached = payload.account.hasCachedProfile ? "cached profile ready" : "no cached profile yet";
   const name = payload.account.displayName || payload.account.username || payload.account.email;
-  accountStatusEl.textContent = `Welcome back, ${name} — ${cached}.`;
+  accountStatusEl.textContent = `Welcome back, ${name} (${cached})`;
   setGlobalAccountBanner(payload.account);
   setFeatureGate(false);
 }

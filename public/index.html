@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Wave2Vector Spotify Live</title>
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%230b1020' width='100' height='100'/><text x='50' y='70' font-size='60' font-weight='700' fill='%23fff' text-anchor='middle' font-family='Inter,Arial,sans-serif'>W</text></svg>" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%23060b17' width='100' height='100'/><text x='50' y='70' font-size='46' font-weight='700' fill='%23fff' text-anchor='middle' font-family='Arial,Helvetica,sans-serif'>W2V</text></svg>" />
     <style>
       :root {
         --bg: #060b17;
@@ -989,12 +989,27 @@
       }
 
       @media (prefers-reduced-motion: reduce) {
+        html:focus-within {
+          scroll-behavior: auto;
+        }
+
         *,
         *::before,
         *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+        }
+
+        .button-primary.cta-pulse,
+        .demo-stage::before,
+        .demo-track,
+        .signal-bar,
+        .centroid-ring,
+        .room-list-item,
+        .participant-card.just-joined,
+        .screen.active .reveal {
           animation: none !important;
-          transition: none !important;
-          scroll-behavior: auto !important;
         }
       }
     </style>
@@ -1005,7 +1020,7 @@
         <div class="header-top">
           <div class="brand">
             <h1>Wave2Vector</h1>
-            <p class="muted">Social Spotify taste rooms with live compatibility.</p>
+            <p class="muted">Real-time music compatibility in shared Spotify rooms.</p>
           </div>
           <button id="spotify-badge" class="spotify-badge" title="Click to connect Spotify">
             <span class="spotify-badge-dot"></span>
@@ -1015,13 +1030,13 @@
         <div class="header-bar">
           <div class="top-nav">
             <button id="view-home" class="active">Home</button>
-            <button id="view-login">Account</button>
+            <button id="view-login">Login</button>
             <button id="view-lobby">Lobby</button>
           </div>
         </div>
       </header>
 
-      <div id="demo-banner" class="demo-banner hidden">Portfolio demo mode: Spotify OAuth is limited to invited testers. You can still explore a fully wired mock profile below.</div>
+      <div id="demo-banner" class="demo-banner hidden">Portfolio demo mode: Spotify OAuth is limited to invited testers. You can explore a fully wired mock profile in this experience.</div>
       <div id="tester-note" class="tester-note hidden">
         <strong>Spotify access is currently invite-only.</strong>
         Use the guided mock profile to preview taste mapping, recommendations, and live-room compatibility.
@@ -1139,7 +1154,7 @@
               </label>
               <label>
                 Password
-                <input id="account-password" type="password" placeholder="At least 8 characters" />
+                <input id="account-password" type="password" placeholder="At least 8 characters" minlength="8" />
               </label>
               <div id="account-actions" class="account-actions">
                 <button id="account-register" class="button-primary">Register</button>
