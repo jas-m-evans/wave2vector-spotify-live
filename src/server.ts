@@ -92,6 +92,30 @@ const app = express();
 app.use(cors());
 app.use(cookieParser());
 app.use(express.json());
+app.use((req, res, next) => {
+  if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
+    return next();
+  }
+  const origin = req.get("origin");
+  if (!origin) {
+    return next();
+  }
+  const host = req.get("x-forwarded-host") ?? req.get("host");
+  if (!host) {
+    return res.status(403).json({ error: "Request origin validation failed." });
+  }
+  try {
+    const originHost = new URL(origin).host;
+    const requestHost = host.split(",")[0].trim();
+    const requestHostNormalized = new URL(`http://${requestHost}`).host;
+    if (originHost !== requestHostNormalized) {
+      return res.status(403).json({ error: "Cross-site request rejected." });
+    }
+  } catch {
+    return res.status(403).json({ error: "Invalid request origin." });
+  }
+  return next();
+});
 
 const stateToSession = new Map<string, string>();
 const sessions = new Map<string, SessionRecord>();
@@ -962,6 +986,13 @@ function averageVectors(vectors: number[][]): number[] | undefined {
     }
   }
   return sum.map((value) => value / vectors.length);
+}
+
+function computeBlendVector(vectorA: number[], vectorB: number[]): number[] {
+  if (!vectorA.length || !vectorB.length || vectorA.length !== vectorB.length) {
+    return vectorA;
+  }
+  return vectorA.map((value, idx) => Number((((value ?? 0.5) + (vectorB[idx] ?? 0.5)) / 2).toFixed(4)));
 }
 
 async function refreshTasteProfileBatch(
@@ -1926,9 +1957,7 @@ app.post("/api/blends", async (req, res) => {
       return res.status(400).json({ error: "Both users need mood snapshots before blending." });
     }
 
-    const blendVector = selfMood.baseVector.length && partnerMood.baseVector.length && selfMood.baseVector.length === partnerMood.baseVector.length
-      ? selfMood.baseVector.map((value, idx) => Number((((value ?? 0.5) + (partnerMood.baseVector[idx] ?? 0.5)) / 2).toFixed(4)))
-      : selfMood.baseVector;
+    const blendVector = computeBlendVector(selfMood.baseVector, partnerMood.baseVector);
 
     const blend = await createBlendSession({
       initiatorUserId,

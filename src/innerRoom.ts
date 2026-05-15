@@ -6,8 +6,12 @@ function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
-function pick<T>(list: T[], indexSeed: number): T {
-  return list[Math.abs(indexSeed) % list.length]!;
+function pick<T>(list: T[], indexSeed: number, fallback: T): T {
+  if (!list.length) {
+    return fallback;
+  }
+  const index = Math.abs(indexSeed) % list.length;
+  return list[index] ?? fallback;
 }
 
 function hashToInt(value: string): number {
@@ -182,6 +186,8 @@ export function generateBlendRoom(params: {
   tagsFromA: string[];
   tagsFromB: string[];
 }): { artifact: RoomArtifact; asset: GeneratedAsset } {
+  const safeTagsA = params.tagsFromA.length ? params.tagsFromA : ["origin-a"];
+  const safeTagsB = params.tagsFromB.length ? params.tagsFromB : ["origin-b"];
   const pseudoSnapshot: MoodProfileSnapshot = {
     id: `blend-${params.blendId}`,
     userId: params.initiatorUserId,
@@ -199,7 +205,7 @@ export function generateBlendRoom(params: {
     confidence: { tier: "medium", score: 70, rationale: ["Blend generated from two user mood vectors"] },
     explainSummary: "EchoMerge blend room generated from both users' patterns.",
     baseVector: params.blendVector,
-    identityTags: [...new Set([...params.tagsFromA.slice(0, 2), ...params.tagsFromB.slice(0, 2), "fusion"])],
+    identityTags: [...new Set([...safeTagsA.slice(0, 2), ...safeTagsB.slice(0, 2), "fusion"])],
   };
   const generated = generateInnerRoom({
     userId: params.initiatorUserId,
@@ -207,7 +213,7 @@ export function generateBlendRoom(params: {
     styleVersion: "echomerge-v1",
   });
   generated.artifact.narrativeTags = pseudoSnapshot.identityTags;
-  generated.artifact.evolutionLabel = `Blend of ${pick(params.tagsFromA, 0)} + ${pick(params.tagsFromB, 0)}`;
+  generated.artifact.evolutionLabel = `Blend of ${pick(safeTagsA, 0, "origin-a")} + ${pick(safeTagsB, 0, "origin-b")}`;
   generated.asset.promptVersion = "echomerge-base-v1";
   return generated;
 }

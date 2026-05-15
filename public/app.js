@@ -120,6 +120,26 @@ async function ensureLiveKitClient() {
   return livekitClient;
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function safeImageSrc(value) {
+  const src = String(value ?? "");
+  if (/^data:image\/svg\+xml;base64,[a-z0-9+/=]+$/i.test(src)) {
+    return src;
+  }
+  if (/^https?:\/\//i.test(src)) {
+    return src;
+  }
+  return "";
+}
+
 const MOCK_RECOMMENDATIONS = [
   {
     trackId: "4cOdK2wGLETKBW3PvgPWqT",
@@ -1537,7 +1557,11 @@ function renderMoodTimeline(snapshots = []) {
   }
   moodTimelineEl.innerHTML = snapshots
     .slice(0, 6)
-    .map((item) => `<div class="history-item"><strong>${new Date(item.computedAt).toLocaleString()}</strong> — ${item.currentPhase?.label ?? "phase"}${item.drift?.signals?.length ? ` · ${item.drift.signals[0]}` : ""}</div>`)
+    .map((item) => {
+      const phaseLabel = escapeHtml(item.currentPhase?.label ?? "phase");
+      const signal = item.drift?.signals?.length ? ` · ${escapeHtml(item.drift.signals[0])}` : "";
+      return `<div class="history-item"><strong>${escapeHtml(new Date(item.computedAt).toLocaleString())}</strong> — ${phaseLabel}${signal}</div>`;
+    })
     .join("");
 }
 
@@ -1548,10 +1572,11 @@ function renderRoomArtifact(artifact, assets = []) {
     return;
   }
   const primary = assets.find((asset) => asset.id === artifact.primaryAssetId) ?? assets[0];
+  const safeSrc = safeImageSrc(primary?.storageUrl);
   roomLatestEl.innerHTML = `
-    <strong>InnerRoom</strong>: ${artifact.evolutionLabel ?? "Generated"}<br/>
-    <span class="muted">${artifact.narrativeTags?.join(" · ") ?? ""}</span>
-    ${primary?.storageUrl ? `<div style="margin-top:10px;"><img src="${primary.storageUrl}" alt="InnerRoom artifact" style="max-width:280px;border-radius:12px;border:1px solid rgba(255,255,255,.18);" /></div>` : ""}
+    <strong>InnerRoom</strong>: ${escapeHtml(artifact.evolutionLabel ?? "Generated")}<br/>
+    <span class="muted">${escapeHtml(artifact.narrativeTags?.join(" · ") ?? "")}</span>
+    ${safeSrc ? `<div style="margin-top:10px;"><img src="${safeSrc}" alt="InnerRoom artifact" style="max-width:280px;border-radius:12px;border:1px solid rgba(255,255,255,.18);" /></div>` : ""}
   `;
 }
 
@@ -2313,8 +2338,8 @@ roomGenerateBtn?.addEventListener("click", async () => {
 
 blendCreateBtn?.addEventListener("click", async () => {
   try {
-    const blend = await createEchoMergeBlend();
-    setSyncStatus(`EchoMerge ready (${blend.id}).`);
+    const createdBlend = await createEchoMergeBlend();
+    setSyncStatus(`EchoMerge ready (${createdBlend.id}).`);
   } catch (error) {
     setSyncStatus(error instanceof Error ? error.message : String(error));
   }

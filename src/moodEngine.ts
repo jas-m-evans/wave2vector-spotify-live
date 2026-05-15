@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
 import { MoodProfileSnapshot, MoodTraits } from "./types.js";
 
+const IDEAL_SAMPLE_COUNT = 36;
+
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(1, value));
@@ -119,6 +121,7 @@ export function computeMoodSnapshot(params: {
   mediumTermVector?: number[];
   shortTermVector?: number[];
   sampledCount: number;
+  /** Number of distinct signal sources contributing to this snapshot (expected 0-5). */
   sourceDiversity: number;
   metadataFallbackRatio: number;
   recencyCompleteness: number;
@@ -151,7 +154,7 @@ export function computeMoodSnapshot(params: {
   const driftScore = traitDistance(stable, current);
   const signals = signalDeltas(stable, current);
 
-  const sampleSignal = Math.min(1, params.sampledCount / 36);
+  const sampleSignal = Math.min(1, params.sampledCount / IDEAL_SAMPLE_COUNT);
   const sourceSignal = clamp01(params.sourceDiversity / 5);
   const fallbackSignal = clamp01(1 - params.metadataFallbackRatio);
   const recencySignal = clamp01(params.recencyCompleteness);
@@ -168,10 +171,11 @@ export function computeMoodSnapshot(params: {
     `${Math.round(recencySignal * 100)}% recency completeness`,
   ];
 
-  const explainSummary =
-    `Your listening pattern suggests a ${phase.label} phase right now, while your stable identity remains ${tags.slice(0, 2).join(" + ")}.` +
-    ` ${signals.length ? `Recent shift: ${signals.join(", ")}.` : "No major short-term shift detected."}` +
-    ` Confidence: ${tier}. This is a listening-pattern interpretation, not a psychological diagnosis.`;
+  const explainSummary = [
+    `Your listening pattern suggests a ${phase.label} phase right now, while your stable identity remains ${tags.slice(0, 2).join(" + ")}.`,
+    signals.length ? `Recent shift: ${signals.join(", ")}.` : "No major short-term shift detected.",
+    `Confidence: ${tier}. This is a listening-pattern interpretation, not a psychological diagnosis.`,
+  ].join(" ");
 
   return {
     id: crypto.randomUUID(),
