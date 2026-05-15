@@ -35,7 +35,7 @@ import {
 import { createLiveKitAccessToken } from "./livekit.js";
 import { computeMutualRecommendations } from "./mutualRecommendations.js";
 import { recommendNearest } from "./recommend.js";
-import { buildTasteStory } from "./tasteInsights.js";
+import { buildTasteStory, buildTasteHoroscope } from "./tasteInsights.js";
 import {
   createSessionId,
   createStateToken,
@@ -53,7 +53,7 @@ import {
   spotifyLoginUrl,
 } from "./spotify.js";
 import { loadLibraryFromDisk, persistLibraryToDisk } from "./store.js";
-import { AppAccountPublic, SessionRecord, SpotifyTokens, TrackFeatureVector } from "./types.js";
+import { AppAccountPublic, SessionRecord, SpotifyTokens, TasteCapsule, TrackFeatureVector } from "./types.js";
 
 dotenv.config();
 
@@ -506,6 +506,228 @@ function buildModelInsights(session: SessionRecord) {
     tasteStory: buildTasteStory(session),
     updatedAt: session.tasteUpdatedAt,
   };
+}
+
+function computeMatchVerdictFromScore(score: number): { verdict: string; verdictEmoji: string } {
+  if (score >= 90) return { verdict: "Punk Soulmates", verdictEmoji: "🤝" };
+  if (score >= 75) return { verdict: "Same Universe, Different Moons", verdictEmoji: "🌙" };
+  if (score >= 60) return { verdict: "Sonic Siblings", verdictEmoji: "🎵" };
+  if (score >= 45) return { verdict: "Crossover Potential", verdictEmoji: "🔀" };
+  if (score >= 30) return { verdict: "Respectful Strangers", verdictEmoji: "🤝" };
+  return { verdict: "Different Planets", verdictEmoji: "🪐" };
+}
+
+function findOutlierTracks(
+  tasteVector: number[],
+  lib: Map<string, TrackFeatureVector>,
+  k = 5,
+): Array<{ trackId: string; name: string; artist: string; artworkUrl?: string; distance: number; badge: string; tagline: string }> {
+  if (!tasteVector.length || !lib.size) {
+    return [];
+  }
+
+  const OUTLIER_BADGES = [
+    "🃏 Wildcard",
+    "🌀 Chaos Agent",
+    "😈 Guilty Pleasure",
+    "🎭 Alter Ego",
+    "🌪️ Plot Twist",
+  ];
+
+  const scored = [...lib.values()].map((track) => {
+    let dot = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < tasteVector.length; i += 1) {
+      dot += tasteVector[i] * (track.vector[i] ?? 0);
+      normA += tasteVector[i] * tasteVector[i];
+      normB += (track.vector[i] ?? 0) * (track.vector[i] ?? 0);
+    }
+    const sim = normA && normB ? dot / (Math.sqrt(normA) * Math.sqrt(normB)) : 0;
+    return { ...track, distance: Number((1 - sim).toFixed(4)) };
+  });
+
+  scored.sort((a, b) => b.distance - a.distance);
+
+  return scored.slice(0, Math.max(1, k)).map((track, idx) => {
+    const badge = OUTLIER_BADGES[idx % OUTLIER_BADGES.length] ?? "🃏 Wildcard";
+    const tagline = `Your most chaotic track: ${track.name} — ${track.distance.toFixed(2)} vector distance from your soul.`;
+    return {
+      trackId: track.trackId,
+      name: track.name,
+      artist: track.artist,
+      artworkUrl: track.artworkUrl,
+      distance: track.distance,
+      badge,
+      tagline,
+    };
+  });
+}
+
+function computeNicheScore(
+  tasteVector: number[],
+  lib: Map<string, TrackFeatureVector>,
+): { nicheScore: number; distanceFromMainstream: number; percentileText: string; verdict: string } {
+  if (!tasteVector.length || !lib.size) {
+    return { nicheScore: 0, distanceFromMainstream: 0, percentileText: "N/A", verdict: "Not enough data yet." };
+  }
+
+  const dims = tasteVector.length;
+  const centroid = new Array<number>(dims).fill(0);
+  let count = 0;
+  for (const track of lib.values()) {
+    if (track.vector.length === dims) {
+      for (let i = 0; i < dims; i += 1) {
+        centroid[i] += track.vector[i];
+      }
+      count += 1;
+    }
+  }
+  if (!count) {
+    return { nicheScore: 0, distanceFromMainstream: 0, percentileText: "N/A", verdict: "Library is empty." };
+  }
+  for (let i = 0; i < dims; i += 1) {
+    centroid[i] /= count;
+  }
+
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < dims; i += 1) {
+    dot += tasteVector[i] * centroid[i];
+    normA += tasteVector[i] * tasteVector[i];
+    normB += centroid[i] * centroid[i];
+  }
+  const similarity = normA && normB ? dot / (Math.sqrt(normA) * Math.sqrt(normB)) : 0;
+  const distanceFromMainstream = Number((1 - similarity).toFixed(4));
+  const nicheScore = Math.round(Math.min(100, distanceFromMainstream * 200));
+
+  let verdict: string;
+  if (nicheScore >= 80) verdict = "Maximum Niche. We've never seen a taste profile quite like yours.";
+  else if (nicheScore >= 60) verdict = "Deep Cut Devotee. You live in the long tail.";
+  else if (nicheScore >= 40) verdict = "Selective Explorer. You range broadly but keep a strong center.";
+  else if (nicheScore >= 20) verdict = "Eclectic but Accessible. You have range and some surprising overlaps.";
+  else verdict = "Crowd Pleaser. Your taste aligns closely with the mainstream — not a bad thing.";
+
+  let percentileText: string;
+  if (nicheScore >= 75) percentileText = "Top 5% most niche";
+  else if (nicheScore >= 55) percentileText = "Top 20% most niche";
+  else if (nicheScore >= 35) percentileText = "Middle of the pack";
+  else percentileText = "Trending mainstream";
+
+  return { nicheScore, distanceFromMainstream, percentileText, verdict };
+}
+
+const SURVEY_QUESTIONS = [
+  {
+    id: "q1",
+    optionA: "Radiohead",
+    optionB: "Daft Punk",
+    hint: "Gloom and poetry vs. euphoria and beats",
+    vectorA: [0.40, 0.55, 0.5, 0.55, 0.35, 0.05, 0.25, 0.30, 0.18, 0.25, 0.48, 0.5, 0.5],
+    vectorB: [0.82, 0.85, 0.5, 0.65, 0.70, 0.05, 0.15, 0.35, 0.10, 0.75, 0.68, 0.5, 0.5],
+  },
+  {
+    id: "q2",
+    optionA: "Kendrick Lamar",
+    optionB: "The Weeknd",
+    hint: "Words that cut vs. vibes that pull",
+    vectorA: [0.72, 0.65, 0.5, 0.65, 0.65, 0.28, 0.15, 0.05, 0.10, 0.50, 0.60, 0.5, 0.5],
+    vectorB: [0.65, 0.70, 0.5, 0.70, 0.35, 0.07, 0.08, 0.06, 0.10, 0.60, 0.55, 0.5, 0.5],
+  },
+  {
+    id: "q3",
+    optionA: "Billie Eilish",
+    optionB: "Taylor Swift",
+    hint: "Hushed shadows vs. bright anthems",
+    vectorA: [0.58, 0.40, 0.5, 0.45, 0.35, 0.06, 0.60, 0.08, 0.08, 0.28, 0.40, 0.5, 0.5],
+    vectorB: [0.71, 0.65, 0.5, 0.60, 0.75, 0.05, 0.38, 0.00, 0.10, 0.75, 0.55, 0.5, 0.5],
+  },
+  {
+    id: "q4",
+    optionA: "Metallica",
+    optionB: "Coldplay",
+    hint: "Full volume catharsis vs. melodic lift",
+    vectorA: [0.40, 0.95, 0.5, 0.90, 0.35, 0.07, 0.05, 0.02, 0.22, 0.35, 0.65, 0.5, 0.5],
+    vectorB: [0.52, 0.55, 0.5, 0.55, 0.65, 0.04, 0.28, 0.08, 0.12, 0.60, 0.50, 0.5, 0.5],
+  },
+  {
+    id: "q5",
+    optionA: "Frank Ocean",
+    optionB: "Post Malone",
+    hint: "Introspective texture vs. breezy swagger",
+    vectorA: [0.55, 0.42, 0.5, 0.48, 0.55, 0.05, 0.55, 0.02, 0.08, 0.55, 0.42, 0.5, 0.5],
+    vectorB: [0.68, 0.65, 0.5, 0.62, 0.65, 0.08, 0.12, 0.00, 0.12, 0.65, 0.55, 0.5, 0.5],
+  },
+];
+
+const surveyAnswerSchema = z.object({
+  answers: z.record(z.string(), z.enum(["a", "b"])),
+});
+
+function estimateVectorFromSurvey(answers: Record<string, "a" | "b">): {
+  estimatedVector: number[];
+  archetype: string;
+  teaserText: string;
+  confidence: number;
+} {
+  const dims = 13;
+  const neutral = new Array<number>(dims).fill(0.5);
+  const chosenVectors: number[][] = [];
+
+  for (const question of SURVEY_QUESTIONS) {
+    const answer = answers[question.id];
+    if (answer === "a") {
+      chosenVectors.push(question.vectorA);
+    } else if (answer === "b") {
+      chosenVectors.push(question.vectorB);
+    }
+  }
+
+  if (!chosenVectors.length) {
+    return {
+      estimatedVector: neutral,
+      archetype: "genre alchemist",
+      teaserText: "Answer the questions to discover your taste archetype.",
+      confidence: 0,
+    };
+  }
+
+  const estimated = new Array<number>(dims).fill(0);
+  for (const vec of chosenVectors) {
+    for (let i = 0; i < dims; i += 1) {
+      estimated[i] += vec[i] ?? 0.5;
+    }
+  }
+  for (let i = 0; i < dims; i += 1) {
+    estimated[i] = Number((estimated[i] / chosenVectors.length).toFixed(4));
+  }
+
+  const energy = estimated[1] ?? 0.5;
+  const acousticness = estimated[6] ?? 0.5;
+  const valence = estimated[9] ?? 0.5;
+  const tempo = estimated[10] ?? 0.5;
+  const loudness = estimated[3] ?? 0.5;
+
+  let archetype: string;
+  if (valence >= 0.65 && acousticness >= 0.50) archetype = "mood architect";
+  else if (energy >= 0.70 && tempo >= 0.60) archetype = "kinetic seeker";
+  else if (valence <= 0.40 && acousticness >= 0.45) archetype = "introspective wanderer";
+  else if (acousticness <= 0.25 && loudness >= 0.65) archetype = "production maximalist";
+  else archetype = "genre alchemist";
+
+  const archetypeLabels: Record<string, string> = {
+    "mood architect": "You engineer the emotional weather of every room you're in. Playlists are blueprints.",
+    "kinetic seeker": "You want music that moves — literally. Tempo is your love language.",
+    "introspective wanderer": "You use music to excavate, not escape. The minor keys know your name.",
+    "production maximalist": "You hear the mix, not just the song. Every texture is intentional.",
+    "genre alchemist": "Genre labels can't contain you. Your taste is a moving target — and that's the point.",
+  };
+
+  const confidence = Math.round((chosenVectors.length / SURVEY_QUESTIONS.length) * 100);
+  const teaserText = archetypeLabels[archetype] ?? "Your taste is genuinely hard to classify. That's a compliment.";
+
+  return { estimatedVector: estimated, archetype, teaserText, confidence };
 }
 
 type ProjectionRole = "target" | "taste" | "selected" | "candidate";
@@ -1565,10 +1787,50 @@ app.post("/api/rooms/:roomName/publish", async (req, res) => {
 
 app.get("/api/rooms/active", async (req, res) => {
   try {
-    await getRoomActor(req);
+    const actor = await getRoomActor(req);
     const limit = Math.max(1, Math.min(30, Number(req.query.limit ?? 20)));
     const rooms = await listActiveRooms(limit);
-    return res.json({ rooms });
+
+    const myVector = actor.session?.tasteVector ?? actor.cached?.tasteVector;
+    const roomsWithMatch: Array<{
+      roomName: string;
+      published: boolean;
+      connectedCount: number;
+      tasteReadyCount: number;
+      updatedAt: number;
+      tasteMatchPct: number | null;
+    }> = rooms.map((room) => ({ ...room, tasteMatchPct: null }));
+
+    if (myVector?.length) {
+      for (const room of roomsWithMatch) {
+        const snapshot = await getRoomSnapshot(room.roomName);
+        const tasteReadyParticipants = snapshot.participants.filter(
+          (p) => p.connected && p.tasteProfile?.tasteVector?.length,
+        );
+        if (!tasteReadyParticipants.length) {
+          continue;
+        }
+        let totalSim = 0;
+        let count = 0;
+        for (const p of tasteReadyParticipants) {
+          const vec = p.tasteProfile?.tasteVector;
+          if (!vec?.length || vec.length !== myVector.length) continue;
+          let dot = 0, normA = 0, normB = 0;
+          for (let i = 0; i < myVector.length; i += 1) {
+            dot += myVector[i] * vec[i];
+            normA += myVector[i] * myVector[i];
+            normB += vec[i] * vec[i];
+          }
+          totalSim += normA && normB ? dot / (Math.sqrt(normA) * Math.sqrt(normB)) : 0;
+          count += 1;
+        }
+        if (count) {
+          room.tasteMatchPct = Math.round(Math.max(0, Math.min(100, (totalSim / count + 1) / 2 * 100)));
+        }
+      }
+    }
+
+    return res.json({ rooms: roomsWithMatch });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return res.status(401).json({ error: message });
@@ -1645,7 +1907,13 @@ app.get("/api/rooms/:roomName/compatibility", async (req, res) => {
       });
     }
 
-    return res.json(room.lastCompatibility);
+    return res.json({
+      ...room.lastCompatibility,
+      vibeClash: room.lastCompatibility.score.cosineSimilarity < 0.5,
+      vibeClashPrompt: room.lastCompatibility.score.cosineSimilarity < 0.5
+        ? "🌋 Vibe Clash detected! Can you find a track you both love?"
+        : null,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return res.status(401).json({ error: message });
@@ -1898,6 +2166,262 @@ app.get("/api/recommendations/live", async (req, res) => {
       },
       recommendations: reranked,
       projectionMap,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(401).json({ error: message });
+  }
+});
+
+// ── Feature 1: Taste Twin Match Card ─────────────────────────────────────────
+
+app.get("/api/rooms/:roomName/match-card", async (req, res) => {
+  try {
+    await getRoomActor(req);
+    const roomName = cleanRoomName(req.params.roomName);
+    const room = await getRoomSnapshot(roomName);
+
+    if (!room.lastCompatibility) {
+      return res.status(404).json({ error: "No compatibility data found for this room. Share taste profiles first." });
+    }
+
+    const comp = room.lastCompatibility;
+    const { verdict, verdictEmoji } = computeMatchVerdictFromScore(comp.score.overallScore);
+
+    const pair = room.participants.filter((p) => p.tasteProfile);
+    const overlappingSignals = pair.length >= 2
+      ? pair[0].tasteProfile!.topSignals.filter((sig) =>
+          pair[1].tasteProfile!.topSignals.includes(sig),
+        )
+      : [];
+
+    const shareText =
+      `${comp.score.participantA} and ${comp.score.participantB} scored ` +
+      `${comp.score.overallScore}/100 on Wave2Vector ${verdictEmoji} ` +
+      `"${verdict}" #TasteTwins #wave2vector`;
+
+    return res.json({
+      roomName,
+      participantA: comp.score.participantA,
+      participantB: comp.score.participantB,
+      overallScore: comp.score.overallScore,
+      similarityLabel: comp.similarityLabel,
+      verdict,
+      verdictEmoji,
+      overlappingSignals,
+      shareText,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(401).json({ error: message });
+  }
+});
+
+// ── Feature 2: Outlier Track Badge ───────────────────────────────────────────
+
+app.get("/api/profile/outlier-track", async (req, res) => {
+  try {
+    const account = await getActiveAccount(req);
+    let session: SessionRecord | null = null;
+    try {
+      session = await getActiveSession(req);
+    } catch {
+      session = null;
+    }
+    const sessionLike = session ?? (account ? await getCachedSessionLike(account.id) : null);
+    if (!sessionLike?.tasteVector?.length) {
+      return res.status(400).json({ error: "Taste profile not available. Run a sync first." });
+    }
+
+    const k = Math.max(1, Math.min(10, Number(req.query.k ?? 5)));
+    const outliers = findOutlierTracks(sessionLike.tasteVector, library, k);
+    return res.json({ outliers });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(401).json({ error: message });
+  }
+});
+
+// ── Feature 4: Taste Horoscope ────────────────────────────────────────────────
+
+app.get("/api/profile/horoscope", async (req, res) => {
+  try {
+    const account = await getActiveAccount(req);
+    let session: SessionRecord | null = null;
+    try {
+      session = await getActiveSession(req);
+    } catch {
+      session = null;
+    }
+    const sessionLike = session ?? (account ? await getCachedSessionLike(account.id) : null);
+    if (!sessionLike?.tasteVector?.length) {
+      return res.status(400).json({ error: "Taste profile not available. Run a sync first." });
+    }
+
+    const horoscope = buildTasteHoroscope(sessionLike);
+    if (!horoscope) {
+      return res.status(400).json({ error: "Unable to generate horoscope." });
+    }
+    return res.json(horoscope);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(401).json({ error: message });
+  }
+});
+
+// ── Feature 5: Niche Listener Score ──────────────────────────────────────────
+
+app.get("/api/leaderboard/niche", async (req, res) => {
+  try {
+    const account = await getActiveAccount(req);
+    let session: SessionRecord | null = null;
+    try {
+      session = await getActiveSession(req);
+    } catch {
+      session = null;
+    }
+    const sessionLike = session ?? (account ? await getCachedSessionLike(account.id) : null);
+    if (!sessionLike?.tasteVector?.length) {
+      return res.status(400).json({ error: "Taste profile not available. Run a sync first." });
+    }
+
+    const result = computeNicheScore(sessionLike.tasteVector, library);
+    const displayName = sessionLike.spotifyProfile?.displayName?.trim() || "Listener";
+    return res.json({
+      displayName,
+      ...result,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(401).json({ error: message });
+  }
+});
+
+// ── Feature 7: Onboarding Taste Survey ───────────────────────────────────────
+
+app.get("/api/survey/questions", (_req, res) => {
+  return res.json({
+    questions: SURVEY_QUESTIONS.map(({ id, optionA, optionB, hint }) => ({ id, optionA, optionB, hint })),
+  });
+});
+
+app.post("/api/survey/estimate", (req, res) => {
+  try {
+    const body = surveyAnswerSchema.parse(req.body ?? {});
+    const result = estimateVectorFromSurvey(body.answers);
+    return res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Invalid request";
+    return res.status(400).json({ error: message });
+  }
+});
+
+// ── Feature 8: Taste Time Capsule ────────────────────────────────────────────
+
+app.post("/api/profile/capsule", async (req, res) => {
+  try {
+    const account = await getActiveAccount(req);
+    let session: SessionRecord | null = null;
+    try {
+      session = await getActiveSession(req);
+    } catch {
+      session = null;
+    }
+
+    const tasteVector = session?.tasteVector ?? (account ? (await getCachedSessionLike(account.id))?.tasteVector : undefined);
+    if (!tasteVector?.length) {
+      return res.status(400).json({ error: "Taste profile not available. Run a sync first." });
+    }
+
+    const topArtists = (session?.artistInsights ?? (account ? (await getCachedSessionLike(account.id))?.artistInsights : undefined))
+      ?.topArtists?.map((a) => a.name) ?? [];
+
+    const capsule: TasteCapsule = {
+      lockedAt: Date.now(),
+      tasteVector,
+      topArtists: topArtists.slice(0, 10),
+    };
+
+    if (session) {
+      session.tasteCapsule = capsule;
+      await setStoredSession(session);
+      if (account) {
+        await saveSessionCacheToAccount(account.id, session);
+      }
+    } else if (account) {
+      const cached = await getCachedSessionLike(account.id);
+      const syntheticSession = {
+        ...cached,
+        id: `aid:${account.id}`,
+        tokens: { accessToken: "", refreshToken: "", expiresAt: 0 },
+        tasteCapsule: capsule,
+      } as SessionRecord;
+      await saveSessionCacheToAccount(account.id, syntheticSession);
+    }
+
+    return res.json({ capsule, message: "Taste time capsule locked. Check back in 90 days." });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(400).json({ error: message });
+  }
+});
+
+app.get("/api/profile/capsule", async (req, res) => {
+  try {
+    const account = await getActiveAccount(req);
+    let session: SessionRecord | null = null;
+    try {
+      session = await getActiveSession(req);
+    } catch {
+      session = null;
+    }
+
+    const cached = !session && account ? await getCachedSessionLike(account.id) : null;
+    const capsule = session?.tasteCapsule ?? cached?.tasteCapsule;
+
+    if (!capsule) {
+      return res.json({ capsule: null, message: "No taste capsule locked yet. Use POST to lock your current taste." });
+    }
+
+    const currentVector = session?.tasteVector ?? cached?.tasteVector;
+    const daysSinceLock = Math.floor((Date.now() - capsule.lockedAt) / (1000 * 60 * 60 * 24));
+    const isReady = daysSinceLock >= 90;
+
+    if (!currentVector?.length || !isReady) {
+      return res.json({
+        capsule,
+        daysSinceLock,
+        isReady,
+        message: isReady
+          ? "Your capsule is ready to open!"
+          : `${90 - daysSinceLock} days until your taste capsule is ready to open.`,
+      });
+    }
+
+    const dims = Math.min(capsule.tasteVector.length, currentVector.length);
+    const featureLabels = vectorFeatureNames;
+    const diffs = Array.from({ length: dims }, (_, i) => ({
+      feature: featureLabels[i] ?? `feature_${i + 1}`,
+      delta: Number(((currentVector[i] ?? 0) - (capsule.tasteVector[i] ?? 0)).toFixed(4)),
+      direction: (currentVector[i] ?? 0) > (capsule.tasteVector[i] ?? 0) ? "up" : "down",
+    }))
+      .filter((d) => Math.abs(d.delta) >= 0.03)
+      .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+      .slice(0, 5);
+
+    const changeLines = diffs.map(
+      (d) => `Your ${d.feature} ${d.direction === "up" ? "rose" : "dropped"} ${Math.abs(Math.round(d.delta * 100))}%.`,
+    );
+
+    return res.json({
+      capsule,
+      daysSinceLock,
+      isReady: true,
+      currentVector,
+      topChanges: diffs,
+      summary: changeLines.length
+        ? changeLines.join(" ")
+        : "Your taste is remarkably consistent — or you haven't changed much. Either way, you know who you are.",
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
