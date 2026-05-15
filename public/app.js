@@ -90,6 +90,8 @@ let currentAccount = null;
 let latestModelInsights = null;
 let previousParticipantNames = new Set();
 let mockMode = false;
+let spotifyConfigReady = true;
+let spotifyMissingEnv = [];
 let localSharedState = {
   tasteProfile: null,
   nowPlayingState: null,
@@ -957,6 +959,49 @@ async function checkAccountAuth() {
   } catch (error) {
     logEvent("account", "Could not fetch account status", error);
     return { authenticated: false };
+  }
+}
+
+async function loadConfigStatus() {
+  try {
+    const response = await fetch("/api/config/status");
+    if (!response.ok) {
+      throw new Error(`Config status request failed (${response.status})`);
+    }
+
+    const payload = await response.json();
+    const spotifyConfig = payload?.spotify ?? {};
+    spotifyConfigReady = Boolean(spotifyConfig.configured);
+    spotifyMissingEnv = Array.isArray(spotifyConfig.missing) ? spotifyConfig.missing : [];
+
+    if (spotifyConfigReady) {
+      loginBtn?.removeAttribute("disabled");
+      loginBtn?.removeAttribute("title");
+      spotifyBadgeEl?.removeAttribute("aria-disabled");
+      logEvent("config", "Spotify env config is ready");
+      return;
+    }
+
+    const missing = spotifyMissingEnv.length ? spotifyMissingEnv.join(", ") : "unknown values";
+    const msg = `Spotify is not configured locally. Missing: ${missing}`;
+    setSyncStatus(msg);
+    appendSyncLog(msg);
+    setSyncPhaseState("auth");
+    setSyncProgress(0);
+    loginBtn?.setAttribute("disabled", "disabled");
+    loginBtn?.setAttribute("title", msg);
+    spotifyBadgeEl?.setAttribute("aria-disabled", "true");
+    if (!isAuthenticated) {
+      updateSpotifyBadge(false);
+      if (spotifyBadgeTextEl) {
+        spotifyBadgeTextEl.textContent = "Spotify not configured";
+      }
+    }
+    logEvent("config", "Spotify env config missing", { missing: spotifyMissingEnv });
+  } catch (error) {
+    spotifyConfigReady = true;
+    spotifyMissingEnv = [];
+    logEvent("config", "Could not verify config status", error);
   }
 }
 
@@ -1832,6 +1877,14 @@ async function leaveRoom() {
 }
 
 loginBtn.addEventListener("click", () => {
+  if (!spotifyConfigReady) {
+    const missing = spotifyMissingEnv.length ? spotifyMissingEnv.join(", ") : "unknown values";
+    const msg = `Spotify setup incomplete. Missing: ${missing}`;
+    setSyncStatus(msg);
+    appendSyncLog(msg);
+    logEvent("auth", "Blocked Spotify connect due to missing config", { missing: spotifyMissingEnv });
+    return;
+  }
   logEvent("auth", "Connect Spotify button clicked");
   if (currentAccount) {
     logEvent("auth", `Current account: ${currentAccount.email}, id=${currentAccount.id}`);
@@ -1849,6 +1902,14 @@ loginBtn.addEventListener("click", () => {
 });
 
 spotifyBadgeEl?.addEventListener("click", () => {
+  if (!spotifyConfigReady) {
+    const missing = spotifyMissingEnv.length ? spotifyMissingEnv.join(", ") : "unknown values";
+    const msg = `Spotify setup incomplete. Missing: ${missing}`;
+    setSyncStatus(msg);
+    appendSyncLog(msg);
+    logEvent("auth", "Blocked Spotify badge connect due to missing config", { missing: spotifyMissingEnv });
+    return;
+  }
   logEvent("auth", "Spotify badge clicked");
   if (currentAccount) {
     logEvent("auth", `Current account: ${currentAccount.email}, id=${currentAccount.id}`);
