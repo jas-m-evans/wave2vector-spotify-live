@@ -167,6 +167,95 @@
         font-weight: 700;
         margin-top: 2px;
       }
+      .demo-showcase {
+        border: 2px solid #111111;
+        background: #ffffff;
+        padding: 12px;
+        margin-bottom: 12px;
+      }
+      .demo-showcase-grid {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 12px;
+        align-items: center;
+      }
+      .demo-stage {
+        border: 2px solid #111111;
+        background: #0f1218;
+        color: #f7fbff;
+        min-height: 220px;
+        padding: 12px;
+        position: relative;
+        overflow: hidden;
+      }
+      .demo-stage::before {
+        content: "";
+        position: absolute;
+        inset: -60px;
+        background: radial-gradient(circle at 30% 20%, #4ea1ff66 0 20%, transparent 50%);
+        animation: driftGlow 4.8s ease-in-out infinite;
+      }
+      .demo-trackline {
+        position: relative;
+        display: grid;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .demo-track {
+        border: 1px solid #8fb9ff66;
+        background: #152032;
+        padding: 8px;
+        font-size: 0.82rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        transform: translateX(-12px);
+        opacity: 0.25;
+        animation: pulseTrack 6s linear infinite;
+      }
+      .demo-track:nth-child(2) { animation-delay: 1.2s; }
+      .demo-track:nth-child(3) { animation-delay: 2.4s; }
+      .demo-track:nth-child(4) { animation-delay: 3.6s; }
+      .demo-pill {
+        border: 1px solid #9ed3ff;
+        color: #9ed3ff;
+        padding: 2px 6px;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .demo-caption {
+        position: relative;
+        margin-top: 10px;
+        font-size: 0.78rem;
+        color: #c5ddff;
+      }
+      .demo-copy h3 {
+        margin: 0 0 6px 0;
+      }
+      .demo-copy p {
+        margin: 0;
+        font-size: 0.88rem;
+      }
+      .demo-copy ul {
+        margin: 10px 0 0 0;
+        padding-left: 16px;
+        font-size: 0.84rem;
+      }
+      .demo-copy li {
+        margin-bottom: 6px;
+      }
+      @keyframes pulseTrack {
+        0% { transform: translateX(-12px); opacity: 0.2; border-color: #8fb9ff33; }
+        20% { transform: translateX(0); opacity: 1; border-color: #9ed3ff; }
+        55% { transform: translateX(0); opacity: 1; border-color: #9ed3ff; }
+        100% { transform: translateX(10px); opacity: 0.2; border-color: #8fb9ff33; }
+      }
+      @keyframes driftGlow {
+        0% { transform: translateX(-10px) translateY(-4px); opacity: 0.45; }
+        50% { transform: translateX(8px) translateY(4px); opacity: 0.9; }
+        100% { transform: translateX(-10px) translateY(-4px); opacity: 0.45; }
+      }
       .login-layout {
         display: grid;
         grid-template-columns: 1.2fr 0.8fr;
@@ -918,6 +1007,9 @@
         .landing-kpis {
           grid-template-columns: 1fr;
         }
+        .demo-showcase-grid {
+          grid-template-columns: 1fr;
+        }
         .login-layout {
           grid-template-columns: 1fr;
         }
@@ -998,6 +1090,31 @@
             </div>
           </div>
         </section>
+
+        <section class="demo-showcase">
+          <div class="demo-showcase-grid">
+            <div class="demo-stage" aria-label="Animated product demo preview">
+              <strong>LIVE ROOM PREVIEW</strong>
+              <div class="demo-trackline">
+                <div class="demo-track"><span>Radiohead + The Damned</span><span class="demo-pill">82% match</span></div>
+                <div class="demo-track"><span>Now Playing blend update</span><span class="demo-pill">live</span></div>
+                <div class="demo-track"><span>Mutual pick: Fast tempo indie</span><span class="demo-pill">new</span></div>
+                <div class="demo-track"><span>Taste horoscope generated</span><span class="demo-pill">AI</span></div>
+              </div>
+              <div class="demo-caption">Animated preview of what users see once profiles are synced.</div>
+            </div>
+            <div class="demo-copy">
+              <h3>Think "social playlist chemistry," not just recommendations.</h3>
+              <p class="muted">This is where the app feels premium: users get instant personality-level feedback, shared momentum, and a reason to invite someone right now.</p>
+              <ul>
+                <li>Real-time compatibility score that updates with current listening</li>
+                <li>Mutual discovery feed that feels collaborative, not generic</li>
+                <li>Shareable room link + taste story designed for virality</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
         <div class="panel auth-banner" data-requires-account="true">
           <div id="auth-status-content"><span class="muted">Checking Spotify connection...</span></div>
           <div class="sync-row">
