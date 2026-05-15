@@ -4,6 +4,13 @@ export type SpotifyTokens = {
   expiresAt: number;
 };
 
+export type TasteCapsule = {
+  lockedAt: number;
+  tasteVector: number[];
+  topArtists: string[];
+  archetype?: string;
+};
+
 export type SessionRecord = {
   id: string;
   tokens: SpotifyTokens;
@@ -12,6 +19,7 @@ export type SessionRecord = {
   tasteVector?: number[];
   tasteUpdatedAt?: number;
   bootstrapCompletedAt?: number;
+  tasteCapsule?: TasteCapsule;
   lastSyncStats?: {
     sampled: number;
     cached: number;
@@ -181,4 +189,47 @@ export type RoomEvent = {
   type: RoomEventType;
   timestamp: number;
   payload?: Record<string, unknown>;
+};
+
+export type OutlierTrackResult = {
+  trackId: string;
+  name: string;
+  artist: string;
+  artworkUrl?: string;
+  distance: number;
+  badge: string;
+  tagline: string;
+};
+
+export type MatchCardData = {
+  roomName: string;
+  participantA: string;
+  participantB: string;
+  overallScore: number;
+  similarityLabel: string;
+  verdict: string;
+  verdictEmoji: string;
+  overlappingSignals: string[];
+  shareText: string;
+};
+
+export type SurveyQuestion = {
+  id: string;
+  optionA: string;
+  optionB: string;
+  hint: string;
+};
+
+export type SurveyEstimate = {
+  estimatedVector: number[];
+  archetype: string;
+  teaserText: string;
+  confidence: number;
+};
+
+export type NicheScore = {
+  nicheScore: number;
+  distanceFromMainstream: number;
+  percentileText: string;
+  verdict: string;
 };

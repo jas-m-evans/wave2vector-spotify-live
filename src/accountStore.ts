@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Redis } from "@upstash/redis";
-import { SessionRecord, SpotifyProfile } from "./types.js";
+import { SessionRecord, SpotifyProfile, TasteCapsule } from "./types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,6 +18,7 @@ type AccountCache = {
   artistInsights?: SessionRecord["artistInsights"];
   spotifyProfile?: SpotifyProfile;
   bootstrapCompletedAt?: number;
+  tasteCapsule?: TasteCapsule;
 };
 
 export type AppAccount = {
@@ -218,6 +219,7 @@ export async function saveSessionCacheToAccount(accountId: string, session: Sess
     artistInsights: session.artistInsights,
     spotifyProfile: spotifyProfile ?? session.spotifyProfile ?? account.cache?.spotifyProfile,
     bootstrapCompletedAt: session.bootstrapCompletedAt,
+    tasteCapsule: session.tasteCapsule ?? account.cache?.tasteCapsule,
   };
   account.updatedAt = Date.now();
   accounts.set(account.id, account);
@@ -238,5 +240,6 @@ export async function getCachedSessionLike(accountId: string): Promise<(Partial<
     lastSyncStats: account.cache.lastSyncStats,
     artistInsights: account.cache.artistInsights,
     spotifyProfile: account.cache.spotifyProfile,
+    tasteCapsule: account.cache.tasteCapsule,
   };
 }

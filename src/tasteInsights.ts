@@ -546,3 +546,100 @@ export function buildTasteStory(session: Partial<SessionRecord> & { spotifyProfi
     },
   };
 }
+
+const HOROSCOPE_PREDICTIONS: Record<string, string[]> = {
+  "kinetic seeker": [
+    "A track with an unexpected tempo shift will stop you mid-sentence this week.",
+    "You will hear something loud in an unlikely place and feel immediately at home.",
+    "Your next obsession is probably already in your queue — you just haven't played it loud enough yet.",
+  ],
+  "mood architect": [
+    "A breezy track will hit you harder than expected this week.",
+    "You will find yourself curating a playlist for a specific 20-minute window of your day.",
+    "The song you recommend to someone next will reveal more about you than about them.",
+  ],
+  "introspective wanderer": [
+    "Something minor-key and unhurried will find you at exactly the right moment.",
+    "You will replay a track three times before you understand why you needed it.",
+    "Your taste is pulling toward something slower and more shadowed than usual — trust it.",
+  ],
+  "production maximalist": [
+    "A heavily produced track will give you chills in a moment you weren't expecting.",
+    "You will notice the mixing on something this week and feel personally vindicated.",
+    "Your next favorite song will sound like someone built it from the ground up just for you.",
+  ],
+  "temporal chameleon": [
+    "A song at an odd BPM will feel oddly correct this week.",
+    "You will shuffle between two completely different moods and both will feel right.",
+    "Something from a genre you don't usually claim will earn a permanent spot in your rotation.",
+  ],
+  "genre alchemist": [
+    "The best song you hear this week will be impossible to explain to someone else.",
+    "You will find a connection between two artists you never expected to link.",
+    "Your taste refuses to be filed — and something new this week will prove it again.",
+  ],
+};
+
+export type TasteHoroscope = {
+  archetype: string;
+  opening: string;
+  artist_read: string;
+  prediction: string;
+  vibe_tags: string[];
+};
+
+export function buildTasteHoroscope(
+  session: Partial<SessionRecord> & { spotifyProfile?: SpotifyProfile | undefined | null },
+): TasteHoroscope | null {
+  const vector = session.tasteVector ?? [];
+  if (!vector.length) {
+    return null;
+  }
+
+  const features = buildFeatureSummaries(vector);
+  const topArtists = session.artistInsights?.topArtists?.map((artist) => artist.name) ?? [];
+  const topGenres = session.artistInsights?.topGenres?.map((genre) => genre.genre) ?? [];
+  const archetype = pickMicroArchetype(features);
+  const displayName = session.spotifyProfile?.displayName?.trim() || "Listener";
+
+  const rankedDistinctive = features
+    .filter((feature) => feature.percentile !== null && feature.id !== "key")
+    .sort((a, b) => distinctiveness(b) - distinctiveness(a));
+  const topFeature = rankedDistinctive[0];
+  const secondFeature = rankedDistinctive[1];
+
+  const artistText = listify(topArtists.slice(0, 2), "your top artists");
+  const genreText = listify(topGenres.slice(0, 2), "your usual territory");
+  const topFeatureDesc = topFeature
+    ? (topFeature.percentile ?? 50) >= 50
+      ? topFeature.highDescriptor
+      : topFeature.lowDescriptor
+    : "a clear sonic identity";
+  const secondFeatureDesc = secondFeature
+    ? (secondFeature.percentile ?? 50) >= 50
+      ? secondFeature.highDescriptor
+      : secondFeature.lowDescriptor
+    : null;
+
+  const opening = secondFeatureDesc
+    ? `${displayName}, the stars see ${topFeatureDesc} and ${secondFeatureDesc} running through everything you play. You are a ${archetype}, and this week that shapes everything.`
+    : `${displayName}, the stars see ${topFeatureDesc} at the center of your musical universe. You are a ${archetype}, and this week that current is especially strong.`;
+
+  const artistRead = topArtists.length
+    ? `${artistText} hold the map to where you are right now — they have been pointing you toward ${genreText} for a reason, even if you haven't named it yet.`
+    : `Your ${genreText} is not a genre, it is a mood. And this week, that mood is sharper than usual.`;
+
+  const predictionsForArchetype = HOROSCOPE_PREDICTIONS[archetype] ?? HOROSCOPE_PREDICTIONS["genre alchemist"];
+  const dayIndex = Math.floor(Date.now() / (1000 * 60 * 60 * 24)) % predictionsForArchetype.length;
+  const prediction = predictionsForArchetype[dayIndex] ?? predictionsForArchetype[0] ?? "Something unexpected is on its way.";
+
+  const vibeTags = buildVibeTags(features, topGenres);
+
+  return {
+    archetype,
+    opening,
+    artist_read: artistRead,
+    prediction,
+    vibe_tags: vibeTags,
+  };
+}
