@@ -408,12 +408,12 @@ function setGlobalAccountBanner(account) {
     return;
   }
   if (demoMode) {
-    globalAccountBannerEl.textContent = "Demo mode: Spotify-only auth";
+    globalAccountBannerEl.textContent = "Demo mode: Spotify-only flow";
     globalAccountBannerEl.classList.add("welcome");
     return;
   }
   if (!account) {
-    globalAccountBannerEl.textContent = "Build your taste profile, then jump into shared rooms.";
+    globalAccountBannerEl.textContent = "Connect Spotify, sync your taste profile, then join a room.";
     globalAccountBannerEl.classList.remove("welcome");
     return;
   }
@@ -694,7 +694,7 @@ function updateShareUrlInput(roomName) {
   }
   roomShareUrlInput.value = roomName
     ? getShareRoomUrl(roomName)
-    : "Join a room to generate a share URL";
+    : "Create or join a room to generate a share link";
 }
 
 function buildShareEmailMessage(roomName) {
@@ -713,9 +713,9 @@ function setStreamMode(nextMode) {
   modeLiveBtn?.classList.toggle("active", streamMode === "live");
   modeBatchBtn?.classList.toggle("active", streamMode === "batch");
   if (streamMode === "batch") {
-    setSyncStatus("Profile recommendations mode: using your persisted taste profile (Home screen only).");
+    setSyncStatus("Profile mode: using your saved taste profile for Home recommendations.");
   } else {
-    setSyncStatus("Live recommendations mode: blending now-playing with your taste profile (Home screen only).");
+    setSyncStatus("Live mode: blending now-playing signals with your taste profile on Home.");
   }
 }
 
@@ -725,7 +725,7 @@ function renderRoomHistory(snapshots) {
   }
   roomHistory = snapshots ?? [];
   if (!roomHistory.length) {
-    roomHistoryEl.innerHTML = `<span class="muted">Space history appears after a room has had at least one live session.</span>`;
+    roomHistoryEl.innerHTML = `<span class="muted">Room history appears after your first shared session.</span>`;
     return;
   }
 
@@ -809,7 +809,7 @@ function renderActiveRooms(rooms) {
     return;
   }
   if (!rooms?.length) {
-    activeRoomsEl.innerHTML = `<span class="muted">No active rooms yet. Create one now or ask a friend for their room link.</span>`;
+    activeRoomsEl.innerHTML = `<span class="muted">No active rooms yet. Create one now or join with a shared link.</span>`;
     return;
   }
 
@@ -940,7 +940,7 @@ function renderAccountStatus(payload) {
     currentAccount = null;
     setAccountAuthControlsVisible(true);
     accountLogoutBtn?.classList.add("hidden");
-    accountStatusEl.textContent = "Use your account credentials to continue.";
+    accountStatusEl.textContent = "Sign in to continue with your saved profile and rooms.";
     setGlobalAccountBanner(null);
     // Do not call setFeatureGate(true) — lobby and rooms are public.
     return;
@@ -950,7 +950,7 @@ function renderAccountStatus(payload) {
   accountLogoutBtn?.classList.remove("hidden");
   const cached = payload.account.hasCachedProfile ? "cached profile ready" : "no cached profile yet";
   const name = payload.account.displayName || payload.account.username || payload.account.email;
-  accountStatusEl.textContent = `Welcome ${name} (${cached})`;
+  accountStatusEl.textContent = `Welcome back, ${name} — ${cached}.`;
   setGlobalAccountBanner(payload.account);
   setFeatureGate(false);
 }
@@ -1014,7 +1014,7 @@ async function loadConfigStatus() {
 
 function renderRecommendations(items) {
   if (!items?.length) {
-    recEl.innerHTML = `<p class="muted">No recommendations yet. Sync with Spotify to hydrate your taste profile.</p>`;
+    recEl.innerHTML = `<p class="muted">No recommendations yet. Sync Spotify to generate your first personalized set.</p>`;
     clearRecommendationHighlights();
     return;
   }
@@ -1060,7 +1060,7 @@ function highlightRecommendation(trackId) {
 
 function renderProfile(profile) {
   if (!profile || !profile.hasTasteVector) {
-    profileEl.innerHTML = `<p class="muted">Still building your taste profile. Click Sync With Spotify and wait a few seconds.</p>`;
+    profileEl.innerHTML = `<p class="muted">Your taste profile is still building. Run a sync and this view will populate in a few seconds.</p>`;
     return;
   }
 

@@ -4,1118 +4,1068 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Wave2Vector Spotify Live</title>
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%23111111' width='100' height='100'/><text x='50' y='70' font-size='60' font-weight='bold' fill='%23fff' text-anchor='middle' font-family='monospace'>W2V</text></svg>" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%230b1020' width='100' height='100'/><text x='50' y='70' font-size='60' font-weight='700' fill='%23fff' text-anchor='middle' font-family='Inter,Arial,sans-serif'>W</text></svg>" />
     <style>
       :root {
-        --bg: #f2f2f2;
-        --panel: #ffffff;
-        --ink: #111111;
-        --muted: #555555;
-        --accent: #111111;
-        --border: #111111;
+        --bg: #060b17;
+        --surface: #0f172a;
+        --surface-elevated: #111d36;
+        --surface-soft: #162440;
+        --text: #f8fbff;
+        --text-muted: #95a7c8;
+        --line: #25375e;
+        --line-strong: #3b568f;
+        --accent: #6f8cff;
+        --accent-2: #2de2ba;
+        --success: #1db954;
+        --danger: #ff6b6b;
+        --shadow: 0 20px 48px rgba(1, 6, 18, 0.45);
+        --radius: 18px;
+        --radius-sm: 12px;
       }
+
+      * {
+        box-sizing: border-box;
+      }
+
       body {
         margin: 0;
-        font-family: "Courier New", "IBM Plex Mono", monospace;
+        font-family: Inter, "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
         background:
-          linear-gradient(45deg, #f2f2f2 25%, #ececec 25%, #ececec 50%, #f2f2f2 50%, #f2f2f2 75%, #ececec 75%, #ececec 100%);
-        background-size: 24px 24px;
-        color: var(--ink);
+          radial-gradient(circle at 10% -20%, #263f75 0%, transparent 46%),
+          radial-gradient(circle at 100% 0%, #15345c 0%, transparent 32%),
+          var(--bg);
+        color: var(--text);
       }
+
       main {
-        max-width: 900px;
-        margin: 30px auto;
-        padding: 20px;
+        width: min(1120px, calc(100% - 32px));
+        margin: 28px auto 44px;
       }
-      .panel {
-        background: var(--panel);
-        border: 2px solid var(--border);
-        border-radius: 0;
-        box-shadow: 4px 4px 0 #000000;
-        padding: 16px;
-        margin-bottom: 14px;
-      }
-      .panel h2,
-      .panel h3 {
+
+      h1,
+      h2,
+      h3,
+      p {
         margin-top: 0;
       }
-      button {
-        background: #ffffff;
-        color: #111111;
-        border: 2px solid #111111;
-        border-radius: 0;
-        font-weight: 700;
-        padding: 10px 14px;
-        cursor: pointer;
-        margin-right: 8px;
+
+      h1 {
+        font-size: clamp(1.3rem, 2vw, 1.65rem);
+        margin: 0;
+        letter-spacing: 0.01em;
+      }
+
+      h2 {
+        font-size: clamp(1.15rem, 1.8vw, 1.45rem);
+        margin-bottom: 10px;
+      }
+
+      h3 {
+        font-size: 1rem;
         margin-bottom: 8px;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        transition: transform 120ms ease, background 120ms ease, color 120ms ease;
       }
-      button:hover {
-        background: #111111;
-        color: #ffffff;
-        transform: translateY(-1px);
+
+      .muted {
+        color: var(--text-muted);
       }
+
+      .hidden {
+        display: none !important;
+      }
+
+      .app-header {
+        display: grid;
+        gap: 14px;
+        margin-bottom: 14px;
+      }
+
+      .header-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .brand {
+        display: grid;
+        gap: 4px;
+      }
+
+      .brand p {
+        margin: 0;
+        font-size: 0.89rem;
+      }
+
       .header-bar {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 12px;
-        gap: 12px;
+        gap: 10px;
       }
+
       .top-nav {
         display: flex;
         gap: 8px;
         flex-wrap: wrap;
       }
-      .top-nav button.active {
-        background: #111111;
-        color: #ffffff;
-      }
-      .spotify-badge {
-        border: 2px solid #111111;
-        background: #ffffff;
-        padding: 6px 10px;
-        font-size: 0.82rem;
-        cursor: pointer;
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        white-space: nowrap;
-        transition: background 120ms ease, color 120ms ease;
-      }
-      .spotify-badge:hover {
-        background: #111111;
-        color: #ffffff;
-      }
-      .spotify-badge-dot {
-        display: inline-block;
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: #666;
-      }
-      .spotify-badge-dot.connected {
-        background: #1DB954;
-      }
+
       .screen {
         display: none;
       }
+
       .screen.active {
         display: block;
       }
-      .hidden {
-        display: none !important;
+
+      .panel {
+        background: linear-gradient(155deg, rgba(18, 30, 56, 0.97), rgba(13, 22, 41, 0.97));
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 20px;
+        margin-bottom: 14px;
       }
-      .pitch-grid {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(170px, 1fr));
-        gap: 10px;
-        margin-top: 10px;
+
+      .glass {
+        background: linear-gradient(150deg, rgba(110, 140, 255, 0.12), rgba(45, 226, 186, 0.06));
+        border: 1px solid rgba(111, 140, 255, 0.34);
       }
-      .pitch-card {
-        border: 2px solid #111111;
-        background: #ffffff;
-        padding: 10px;
-        min-height: 120px;
+
+      button {
+        appearance: none;
+        border: 1px solid var(--line-strong);
+        background: rgba(111, 140, 255, 0.12);
+        color: var(--text);
+        padding: 10px 14px;
+        border-radius: 12px;
+        font-size: 0.86rem;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        cursor: pointer;
+        transition: transform 150ms ease, border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
       }
-      .landing-hero {
-        border: 2px solid #111111;
-        background:
-          radial-gradient(circle at 82% 18%, #e7f0ff 0 24%, transparent 25%),
-          linear-gradient(125deg, #ffffff 0%, #eef4ff 100%);
-        padding: 18px;
+
+      button:hover {
+        transform: translateY(-1px);
+        border-color: #8ca2ff;
+        background: rgba(111, 140, 255, 0.22);
+      }
+
+      button:focus-visible,
+      input:focus-visible {
+        outline: 2px solid rgba(111, 140, 255, 0.9);
+        outline-offset: 2px;
+      }
+
+      button.active,
+      .button-primary {
+        border-color: #8ca2ff;
+        background: linear-gradient(135deg, #5f7fff, #6f8cff 60%, #8ba5ff);
+        box-shadow: 0 8px 20px rgba(100, 126, 255, 0.45);
+      }
+
+      .button-secondary {
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .button-primary.cta-pulse {
+        animation: ctaPulse 1.8s ease-in-out infinite;
+      }
+
+      .spotify-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        white-space: nowrap;
+      }
+
+      .spotify-badge-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: #74809a;
+      }
+
+      .spotify-badge-dot.connected {
+        background: var(--success);
+      }
+
+      .global-account-banner {
+        border: 1px solid var(--line-strong);
+        background: rgba(111, 140, 255, 0.08);
+        padding: 10px 12px;
+        border-radius: 12px;
         margin-bottom: 12px;
-      }
-      .landing-hero h2 {
-        margin: 0 0 8px 0;
-      }
-      .landing-hero p {
-        margin: 0;
+        color: #d8e4ff;
         font-size: 0.9rem;
       }
+
+      .global-account-banner.welcome {
+        border-color: rgba(45, 226, 186, 0.45);
+        background: rgba(45, 226, 186, 0.12);
+      }
+
+      .home-hero {
+        display: grid;
+        gap: 12px;
+      }
+
+      .eyebrow {
+        font-size: 0.74rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: #acc2ff;
+      }
+
+      .home-hero h2 {
+        font-size: clamp(1.65rem, 4vw, 2.7rem);
+        line-height: 1.1;
+        margin: 0;
+        max-width: 16ch;
+      }
+
+      .home-hero p {
+        margin: 0;
+        max-width: 66ch;
+        line-height: 1.5;
+      }
+
       .landing-actions {
-        margin-top: 12px;
         display: flex;
         flex-wrap: wrap;
-        gap: 8px;
+        gap: 10px;
       }
-      .landing-actions button.secondary {
-        background: #f6f6f6;
-      }
-      .landing-kpis {
-        margin-top: 14px;
-        display: grid;
-        grid-template-columns: repeat(3, minmax(120px, 1fr));
-        gap: 8px;
-      }
-      .landing-kpi {
-        border: 2px solid #111111;
-        background: #ffffff;
-        padding: 8px;
-      }
-      .landing-kpi-label {
-        display: block;
-        font-size: 0.72rem;
-        letter-spacing: 0.08em;
-      }
-      .landing-kpi-value {
-        display: block;
-        font-size: 1.15rem;
-        font-weight: 700;
-        margin-top: 2px;
-      }
-      .demo-showcase {
-        border: 2px solid #111111;
-        background: #ffffff;
-        padding: 12px;
-        margin-bottom: 12px;
-      }
-      .demo-showcase-grid {
+
+      .home-proof-grid {
         display: grid;
         grid-template-columns: 1.1fr 0.9fr;
-        gap: 12px;
-        align-items: center;
+        gap: 14px;
+        align-items: stretch;
       }
+
       .demo-stage {
-        border: 2px solid #111111;
-        background: #0f1218;
-        color: #f7fbff;
-        min-height: 220px;
+        border: 1px solid var(--line-strong);
+        border-radius: 14px;
+        background: linear-gradient(160deg, #101c37 0%, #0a1325 100%);
         padding: 12px;
+        min-height: 228px;
         position: relative;
         overflow: hidden;
       }
+
       .demo-stage::before {
         content: "";
         position: absolute;
-        inset: -60px;
-        background: radial-gradient(circle at 30% 20%, #4ea1ff66 0 20%, transparent 50%);
-        animation: driftGlow 4.8s ease-in-out infinite;
+        inset: -40px;
+        background: radial-gradient(circle at 26% 20%, rgba(45, 226, 186, 0.2), transparent 38%);
+        animation: driftGlow 5.5s ease-in-out infinite;
       }
+
       .demo-trackline {
         position: relative;
         display: grid;
         gap: 8px;
-        margin-top: 8px;
+        margin-top: 10px;
       }
+
       .demo-track {
-        border: 1px solid #8fb9ff66;
-        background: #152032;
+        border: 1px solid #32518d;
+        border-radius: 10px;
+        background: rgba(13, 24, 47, 0.85);
         padding: 8px;
-        font-size: 0.82rem;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        transform: translateX(-12px);
+        font-size: 0.8rem;
         opacity: 0.25;
-        animation: pulseTrack 6s linear infinite;
+        transform: translateX(-8px);
+        animation: pulseTrack 5.2s linear infinite;
       }
-      .demo-track:nth-child(2) { animation-delay: 1.2s; }
-      .demo-track:nth-child(3) { animation-delay: 2.4s; }
-      .demo-track:nth-child(4) { animation-delay: 3.6s; }
+
+      .demo-track:nth-child(2) {
+        animation-delay: 1.3s;
+      }
+
+      .demo-track:nth-child(3) {
+        animation-delay: 2.6s;
+      }
+
+      .demo-track:nth-child(4) {
+        animation-delay: 3.9s;
+      }
+
       .demo-pill {
-        border: 1px solid #9ed3ff;
-        color: #9ed3ff;
-        padding: 2px 6px;
-        font-size: 0.7rem;
+        border: 1px solid #5ba7ff;
+        color: #9fd0ff;
+        border-radius: 999px;
+        padding: 2px 7px;
+        font-size: 0.66rem;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.06em;
       }
-      .demo-caption {
-        position: relative;
-        margin-top: 10px;
+
+      .trust-row {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(120px, 1fr));
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .trust-pill {
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.02);
+        border-radius: 10px;
+        padding: 8px 10px;
         font-size: 0.78rem;
-        color: #c5ddff;
       }
-      .demo-copy h3 {
-        margin: 0 0 6px 0;
-      }
-      .demo-copy p {
-        margin: 0;
-        font-size: 0.88rem;
-      }
-      .demo-copy ul {
-        margin: 10px 0 0 0;
-        padding-left: 16px;
-        font-size: 0.84rem;
-      }
-      .demo-copy li {
-        margin-bottom: 6px;
-      }
-      @keyframes pulseTrack {
-        0% { transform: translateX(-12px); opacity: 0.2; border-color: #8fb9ff33; }
-        20% { transform: translateX(0); opacity: 1; border-color: #9ed3ff; }
-        55% { transform: translateX(0); opacity: 1; border-color: #9ed3ff; }
-        100% { transform: translateX(10px); opacity: 0.2; border-color: #8fb9ff33; }
-      }
-      @keyframes driftGlow {
-        0% { transform: translateX(-10px) translateY(-4px); opacity: 0.45; }
-        50% { transform: translateX(8px) translateY(4px); opacity: 0.9; }
-        100% { transform: translateX(-10px) translateY(-4px); opacity: 0.45; }
-      }
-      .login-layout {
+
+      .auth-banner {
         display: grid;
-        grid-template-columns: 1.2fr 0.8fr;
-        gap: 12px;
-      }
-      .pitch-icon {
-        width: 34px;
-        height: 34px;
-        margin-bottom: 8px;
-      }
-      pre {
-        background: #ffffff;
-        border: 2px solid #111111;
-        padding: 10px;
-        border-radius: 0;
-        overflow: auto;
-      }
-      .row {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 14px;
-      }
-      .track {
-        display: flex;
         gap: 10px;
+      }
+
+      .auth-avatar {
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        border: 1px solid var(--line-strong);
+      }
+
+      .connected-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--success);
+        margin-left: 6px;
+      }
+
+      .sync-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
         align-items: center;
       }
-      .track.rec-item {
-        border: 2px solid transparent;
-        padding: 6px;
-        transition: background 120ms ease, border-color 120ms ease;
+
+      .sync-status {
+        border: 1px dashed var(--line-strong);
+        border-radius: 10px;
+        padding: 8px 10px;
+        font-size: 0.85rem;
       }
-      .track.rec-item.active {
-        border-color: #111111;
-        background: #f2f6ff;
+
+      .sync-meter {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        overflow: hidden;
+        height: 16px;
+        background: rgba(255, 255, 255, 0.04);
       }
-      .track img {
-        width: 60px;
-        height: 60px;
-        border-radius: 8px;
+
+      .sync-meter-fill {
+        height: 100%;
+        width: 0;
+        background: linear-gradient(90deg, #35dd9b, #6f8cff);
+        transition: width 220ms linear;
       }
-      .muted {
-        color: var(--muted);
+
+      .phase-row {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(72px, 1fr));
+        gap: 6px;
       }
+
+      .phase-pill {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 4px 6px;
+        text-align: center;
+        font-size: 0.72rem;
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      .phase-pill.active {
+        border-color: #8ca2ff;
+        background: rgba(111, 140, 255, 0.3);
+      }
+
+      .phase-pill.done {
+        border-color: rgba(45, 226, 186, 0.5);
+        background: rgba(45, 226, 186, 0.16);
+      }
+
+      .sync-log {
+        white-space: pre-wrap;
+        border: 1px dashed var(--line);
+        border-radius: 10px;
+        padding: 8px;
+        max-height: 120px;
+        overflow: auto;
+        font-size: 0.8rem;
+      }
+
+      .mode-switch {
+        margin-top: 10px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .mode-helper {
+        margin-top: 6px;
+        font-size: 0.82rem;
+      }
+
       .control-grid {
         display: grid;
-        grid-template-columns: repeat(3, minmax(170px, 1fr));
-        gap: 12px;
-        margin-top: 8px;
+        grid-template-columns: repeat(3, minmax(140px, 1fr));
+        gap: 10px;
+        margin-top: 10px;
       }
-      .mode-switch {
-        margin-top: 12px;
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-      }
-      .mode-switch button.active {
-        background: #111111;
-        color: #ffffff;
-      }
-      .control-grid label {
-        display: block;
-        font-size: 0.92rem;
-      }
-      .control-grid input[type="range"],
-      .control-grid input[type="number"] {
+
+      .control-grid input,
+      .account-grid input,
+      .room-grid input,
+      .room-url input,
+      .share-row input {
         width: 100%;
-        margin-top: 6px;
+        background: rgba(5, 10, 22, 0.88);
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px;
       }
-      .chip-row {
+
+      pre {
+        margin: 0;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #050a14;
+        padding: 10px;
+        max-height: 260px;
+        overflow: auto;
+      }
+
+      .chip-row,
+      .insight-chips,
+      .presence-row,
+      .taste-signal-row,
+      .projection-legend,
+      .participant-tags {
         display: flex;
         flex-wrap: wrap;
         gap: 6px;
-        margin-top: 6px;
       }
-      .chip {
-        background: #ffffff;
-        border: 1px solid #111111;
-        border-radius: 0;
+
+      .chip,
+      .insight-chip,
+      .presence-badge,
+      .taste-pill,
+      .legend-pill,
+      .participant-tag {
+        border: 1px solid var(--line);
+        border-radius: 999px;
         padding: 3px 8px;
-        font-size: 0.8rem;
-        color: #111111;
+        font-size: 0.76rem;
+        background: rgba(255, 255, 255, 0.03);
       }
+
+      .presence-badge.you {
+        border-color: #8ca2ff;
+      }
+
+      .presence-badge.online {
+        background: rgba(45, 226, 186, 0.12);
+      }
+
+      .track {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+      }
+
+      .track img {
+        width: 58px;
+        height: 58px;
+        border-radius: 10px;
+      }
+
+      .track.rec-item {
+        border: 1px solid transparent;
+        border-radius: 12px;
+        padding: 8px;
+        transition: border-color 160ms ease, background 160ms ease;
+      }
+
+      .track.rec-item.active {
+        border-color: #8ca2ff;
+        background: rgba(111, 140, 255, 0.12);
+      }
+
+      .rec-layout,
+      .insight-grid,
+      .room-panels {
+        display: grid;
+        gap: 10px;
+      }
+
+      .rec-layout {
+        grid-template-columns: 0.9fr 1.1fr;
+      }
+
+      .insight-grid,
+      .room-panels {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .bar-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .bar-row {
+        display: grid;
+        grid-template-columns: 100px 1fr 42px;
+        gap: 8px;
+        align-items: center;
+        font-size: 0.8rem;
+      }
+
+      .bar-track {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        height: 10px;
+        overflow: hidden;
+      }
+
+      .bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #6f8cff, #2de2ba);
+      }
+
+      .projection-wrap {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.02);
+        padding: 10px;
+      }
+
+      .projection-svg {
+        width: 100%;
+        height: 260px;
+        border: 1px dashed var(--line);
+        border-radius: 10px;
+        background: rgba(5, 10, 20, 0.7);
+      }
+
+      .projection-point {
+        cursor: pointer;
+        transition: transform 120ms ease;
+      }
+
+      .projection-point.active {
+        filter: drop-shadow(0 0 6px rgba(111, 140, 255, 0.85));
+      }
+
+      .centroid-ring {
+        animation: pulseRing 1300ms ease-in-out infinite;
+      }
+
+      .login-layout {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 12px;
+      }
+
+      .account-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr auto;
+        gap: 8px;
+        align-items: end;
+      }
+
+      .account-grid.logged-in {
+        grid-template-columns: 1fr auto;
+      }
+
+      .account-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .account-actions.logged-in-only {
+        justify-self: end;
+      }
+
+      .helper-note {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.03);
+        padding: 10px;
+        margin-top: 10px;
+        font-size: 0.84rem;
+      }
+
+      .stepper {
+        display: grid;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .step {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 8px 10px;
+        display: grid;
+        grid-template-columns: 16px 1fr;
+        gap: 8px;
+        align-items: center;
+        font-size: 0.84rem;
+      }
+
+      .step .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        border: 1px solid var(--line-strong);
+      }
+
+      .step.active {
+        border-color: #8ca2ff;
+        background: rgba(111, 140, 255, 0.15);
+      }
+
+      .step.active .dot {
+        background: #8ca2ff;
+      }
+
+      .lobby-hero,
+      .room-hero {
+        border: 1px solid var(--line-strong);
+        border-radius: 12px;
+        background: rgba(111, 140, 255, 0.08);
+        padding: 12px;
+        margin-bottom: 10px;
+      }
+
+      .demo-stat-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(120px, 1fr));
+        gap: 8px;
+      }
+
+      .demo-stat {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 8px;
+      }
+
+      .demo-stat-label {
+        font-size: 0.7rem;
+        color: var(--text-muted);
+        letter-spacing: 0.07em;
+      }
+
+      .demo-stat-value {
+        font-size: 1.15rem;
+        font-weight: 700;
+      }
+
       .room-grid {
         display: grid;
         grid-template-columns: 1fr 1fr auto;
         gap: 10px;
         align-items: end;
       }
-      .room-grid input {
-        width: 100%;
-        box-sizing: border-box;
-        padding: 10px;
-        border-radius: 0;
-        border: 2px solid #111111;
-        background: #ffffff;
-        color: #111111;
-      }
-      .room-url {
-        margin-top: 10px;
-        display: grid;
-        grid-template-columns: 1fr auto auto;
-        gap: 8px;
-      }
-      .room-url input {
-        width: 100%;
-        box-sizing: border-box;
-        padding: 10px;
-        border-radius: 0;
-        border: 2px solid #111111;
-        background: #f7f7f7;
-        color: #111111;
-      }
-      .status-badge {
-        display: inline-block;
-        border-radius: 0;
-        border: 2px solid #111111;
-        padding: 4px 10px;
-        font-size: 0.8rem;
-        margin-top: 10px;
-      }
-      .score-meter {
-        height: 12px;
-        border-radius: 0;
-        background: #ffffff;
-        border: 2px solid #111111;
-        overflow: hidden;
-      }
-      .score-fill {
-        height: 100%;
-        background: repeating-linear-gradient(90deg, #111111 0 8px, #f2f2f2 8px 16px);
-      }
-      .auth-banner {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 10px;
-        padding: 12px 16px;
-      }
-      .auth-avatar {
-        width: 38px;
-        height: 38px;
-        border-radius: 50%;
-        border: 2px solid #111111;
-      }
-      .connected-dot {
-        display: inline-block;
-        width: 8px;
-        height: 8px;
-        border-radius: 0;
-        background: #2fbf4a;
-        margin-left: 5px;
-        vertical-align: middle;
-      }
-      .sync-status {
-        padding: 8px 10px;
-        border: 2px dashed #111111;
-        font-size: 0.88rem;
-      }
-      .sync-meter {
-        border: 2px solid #111111;
-        background: #ffffff;
-        height: 18px;
-        position: relative;
-      }
-      .sync-meter-fill {
-        height: 100%;
-        width: 0%;
-        background: repeating-linear-gradient(90deg, #2fbf4a 0 6px, #ffffff 6px 12px);
-        transition: width 220ms linear;
-      }
-      .sync-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 8px;
-      }
-      .sync-log {
-        border: 1px dashed #111111;
-        padding: 8px;
-        font-size: 0.82rem;
-        max-height: 110px;
-        overflow: auto;
-        background: #f8f8f8;
-        white-space: pre-wrap;
-      }
-      .phase-row {
-        display: grid;
-        grid-template-columns: repeat(5, minmax(90px, 1fr));
-        gap: 6px;
-        margin-top: 8px;
-      }
-      .phase-pill {
-        border: 1px solid #111111;
-        padding: 4px 6px;
-        font-size: 0.74rem;
-        text-align: center;
-        background: #ffffff;
-      }
-      .phase-pill.active {
-        background: #111111;
-        color: #ffffff;
-      }
-      .phase-pill.done {
-        background: #dff5e4;
-      }
-      .insight-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-      }
-      .bar-list {
-        display: grid;
-        gap: 6px;
-      }
-      .bar-row {
-        display: grid;
-        grid-template-columns: 120px 1fr 44px;
-        gap: 8px;
-        align-items: center;
-        font-size: 0.82rem;
-      }
-      .bar-track {
-        border: 1px solid #111111;
-        height: 10px;
-        background: #ffffff;
-      }
-      .bar-fill {
-        height: 100%;
-        background: repeating-linear-gradient(90deg, #111111 0 5px, #ffffff 5px 10px);
-      }
-      .insight-chips {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        margin-top: 8px;
-      }
-      .insight-chip {
-        border: 1px solid #111111;
-        padding: 3px 6px;
-        font-size: 0.78rem;
-        background: #ffffff;
-      }
-      .insight-meta {
-        font-size: 0.84rem;
-        margin-bottom: 8px;
-      }
-      .room-hero {
-        border: 2px solid #111111;
-        background:
-          radial-gradient(circle at 12% 15%, #e9f3ec 0 28%, transparent 29%),
-          linear-gradient(135deg, #ffffff 0%, #eef5ef 100%);
-        padding: 12px;
-        margin-bottom: 10px;
-        position: relative;
-        overflow: hidden;
-      }
-      .room-hero h2 {
-        margin-bottom: 8px;
-      }
-      .room-hero::after {
-        content: "";
-        position: absolute;
-        right: -40px;
-        top: -40px;
-        width: 160px;
-        height: 160px;
-        border: 2px dashed #111111;
-        opacity: 0.22;
-        transform: rotate(12deg);
-      }
-      .presence-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        margin-top: 8px;
-      }
-      .presence-badge {
-        border: 1px solid #111111;
-        background: #ffffff;
-        padding: 3px 8px;
-        font-size: 0.76rem;
-      }
-      .presence-badge.you {
-        background: #eef5ff;
-      }
-      .presence-badge.online {
-        box-shadow: inset 0 0 0 2px #2f6f2f33;
-      }
-      .signal-bars {
-        display: grid;
-        grid-template-columns: repeat(6, minmax(20px, 1fr));
-        gap: 6px;
-        align-items: end;
-        margin-top: 10px;
-      }
-      .signal-bar {
-        border: 1px solid #111111;
-        background: linear-gradient(180deg, #cce7d1 0%, #2f6f2f 100%);
-        height: var(--h, 20px);
-        min-height: 12px;
-        position: relative;
-        animation: signalPulse 1.8s ease-in-out infinite;
-        animation-delay: var(--d, 0s);
-      }
-      .signal-bar-label {
-        display: block;
-        font-size: 0.68rem;
-        margin-top: 2px;
-        text-align: center;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      @keyframes signalPulse {
-        0% { transform: translateY(0); opacity: 0.82; }
-        50% { transform: translateY(-2px); opacity: 1; }
-        100% { transform: translateY(0); opacity: 0.82; }
-      }
-      .room-subtitle {
-        margin: 0;
-      }
-      .room-inline-status {
-        margin-top: 8px;
-      }
-      .taste-signal-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        margin-top: 10px;
-      }
-      .taste-pill {
-        border: 1px solid #111111;
-        background: #ffffff;
-        padding: 3px 7px;
-        font-size: 0.78rem;
-      }
-      .room-taste-summary {
-        margin-top: 8px;
-        font-size: 0.82rem;
-      }
-      .room-panels {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-      }
-      .room-panel-card {
-        border: 2px solid #111111;
-        background: #ffffff;
-        box-shadow: 3px 3px 0 #000;
-      }
-      .room-directory-title {
-        margin-top: 10px;
-        margin-bottom: 6px;
-        font-size: 0.82rem;
-        letter-spacing: 0.06em;
-      }
-      .projection-wrap {
-        margin-top: 12px;
-        border: 2px solid #111111;
-        background: #ffffff;
-        padding: 8px;
-      }
-      .projection-axis {
-        font-size: 0.8rem;
-        margin-bottom: 6px;
-      }
-      .projection-svg {
-        width: 100%;
-        height: 260px;
-        border: 1px dashed #111111;
-        background: #fbfbfb;
-      }
-      .projection-legend {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-top: 8px;
-        font-size: 0.78rem;
-      }
-      .legend-pill {
-        border: 1px solid #111111;
-        background: #fff;
-        padding: 2px 6px;
-      }
-      .rec-layout {
-        display: grid;
-        grid-template-columns: 0.85fr 1.15fr;
-        gap: 10px;
-      }
-      .account-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr 1fr auto;
-        gap: 8px;
-        align-items: end;
-      }
-      .account-grid.logged-in {
-        grid-template-columns: 1fr auto;
-        align-items: start;
-      }
-      .account-grid input {
-        width: 100%;
-        box-sizing: border-box;
-        padding: 10px;
-        border: 2px solid #111111;
-      }
-      .account-actions {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-        justify-content: flex-end;
-        flex-wrap: wrap;
-      }
-      .account-actions button {
-        margin: 0;
-      }
-      .account-actions.logged-in-only {
-        justify-self: end;
-        align-self: start;
-      }
-      .mode-helper {
-        margin-top: 6px;
-        font-size: 0.82rem;
-      }
-      .global-account-banner {
-        margin-bottom: 12px;
-        border: 2px solid #111111;
-        background: #ffffff;
-        padding: 10px 12px;
-        font-size: 0.92rem;
-        font-weight: 700;
-      }
-      .global-account-banner.welcome {
-        background: #edf7ee;
-      }
-      .helper-note {
-        border-left: 4px solid #444;
-        background: #f7f7f7;
-        padding: 10px;
-        font-size: 0.84rem;
-      }
-      .helper-note.instructions {
-        border-left-color: #888;
-        background: #f3f3f3;
-      }
-      .tiny-icon-btn {
-        width: 44px;
-        height: 44px;
-        padding: 0;
-        display: inline-grid;
-        place-items: center;
-        margin-right: 0;
-        margin-bottom: 0;
-      }
-      .tiny-icon-btn svg {
-        width: 18px;
-        height: 18px;
-      }
+
       .field-with-action {
         position: relative;
         display: block;
       }
+
       .field-with-action input {
-        padding-right: 54px;
+        padding-right: 46px;
       }
+
       .field-with-action.dual-actions input {
-        padding-right: 98px;
+        padding-right: 90px;
       }
-      .room-name-field .tiny-icon-btn.inside-action {
-        position: absolute;
-        right: 6px;
-        top: 32px;
-        transform: none;
-      }
-      .field-with-action .inside-action {
-        position: absolute;
-        right: 6px;
-        top: 50%;
-        transform: translateY(-50%);
+
+      .tiny-icon-btn {
         width: 38px;
         height: 38px;
-        margin: 0;
-        background: #ffffff;
-        border: 2px solid #111111;
+        padding: 0;
+        display: grid;
+        place-items: center;
       }
-      .field-with-action .inside-action:hover {
-        background: #111111;
-        color: #ffffff;
+
+      .tiny-icon-btn svg {
+        width: 16px;
+        height: 16px;
       }
-      .field-with-action .copy-action {
-        right: 50px;
-      }
-      .field-with-action .share-action {
+
+      .field-with-action .inside-action {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
         right: 6px;
       }
+
+      .room-name-field .inside-action {
+        top: calc(50% + 10px);
+      }
+
+      .field-with-action .copy-action {
+        right: 49px;
+      }
+
       .share-row {
         margin-top: 10px;
-        display: block;
       }
-      .share-row input {
-        width: 100%;
-        box-sizing: border-box;
-        padding: 10px;
-        border: 2px solid #111111;
-      }
+
       .share-menu-wrap {
         position: relative;
-        justify-self: end;
       }
+
       .share-menu {
         position: absolute;
         right: 0;
         top: calc(100% + 6px);
-        z-index: 20;
-        min-width: 230px;
-        background: #ffffff;
-        border: 2px solid #111111;
-        box-shadow: 4px 4px 0 #000;
+        border: 1px solid var(--line-strong);
+        border-radius: 10px;
+        background: #111c33;
         padding: 8px;
+        min-width: 210px;
+        z-index: 20;
       }
+
       .share-menu button {
-        display: block;
         width: 100%;
-        text-align: left;
-        margin-right: 0;
         margin-bottom: 6px;
+        text-align: left;
       }
+
       .share-menu button:last-child {
         margin-bottom: 0;
       }
-      .toast {
-        position: fixed;
-        right: 20px;
-        bottom: 20px;
-        z-index: 40;
-        background: #111;
-        color: #fff;
-        border: 2px solid #111;
-        padding: 10px 14px;
-        font-size: 0.84rem;
-        box-shadow: 4px 4px 0 #000;
+
+      .status-badge {
+        display: inline-block;
+        margin-top: 10px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 5px 10px;
+        font-size: 0.8rem;
       }
-      .projection-point {
-        cursor: pointer;
-        transition: transform 120ms ease;
-      }
-      .projection-point.active {
-        filter: drop-shadow(0 0 4px #00000066);
-      }
-      .centroid-ring {
-        animation: pulseRing 1300ms ease-in-out infinite;
-      }
+
+      .active-rooms,
+      .history-list,
       .room-help {
-        border: 1px dashed #111111;
-        padding: 8px;
-        font-size: 0.84rem;
-        margin-top: 8px;
-        background: #fafafa;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px;
+        background: rgba(255, 255, 255, 0.02);
       }
-      .stepper {
-        display: grid;
-        gap: 6px;
-        margin-top: 10px;
-      }
-      .step {
-        display: grid;
-        grid-template-columns: 24px 1fr;
-        align-items: center;
-        gap: 8px;
-        border: 1px solid #111111;
-        background: #fff;
-        padding: 6px 8px;
-        font-size: 0.84rem;
-      }
-      .step .dot {
-        width: 12px;
-        height: 12px;
-        border: 2px solid #111111;
-        background: #fff;
-      }
-      .step.active {
-        background: #eef4ff;
-      }
-      .step.active .dot {
-        background: #111111;
-      }
-      .active-rooms {
-        margin-top: 10px;
-        border: 2px solid #111111;
-        background: #ffffff;
-        padding: 8px 10px;
-      }
-      .room-list-item {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 8px;
-        align-items: center;
-        padding: 8px 0;
-        border-bottom: 1px dashed #999;
-        font-size: 0.84rem;
-      }
-      .room-list-item:last-child {
-        border-bottom: none;
-      }
+
       .history-list {
-        margin-top: 10px;
-        border: 1px dashed #111111;
-        padding: 8px;
+        margin-top: 8px;
         max-height: 220px;
         overflow: auto;
       }
+
+      .room-directory-title {
+        margin-top: 10px;
+        margin-bottom: 6px;
+        font-size: 0.74rem;
+        letter-spacing: 0.08em;
+      }
+
+      .room-list-item,
       .history-item {
-        border-bottom: 1px solid #d8d8d8;
-        padding: 8px 0;
-        font-size: 0.84rem;
         display: grid;
         grid-template-columns: 1fr auto;
         gap: 8px;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(149, 167, 200, 0.28);
+        font-size: 0.84rem;
       }
+
+      .room-list-item:last-child,
       .history-item:last-child {
         border-bottom: none;
       }
-      .lobby-hero {
-        border: 2px solid #111111;
-        background:
-          radial-gradient(circle at 88% 10%, #f6efe2 0 22%, transparent 23%),
-          linear-gradient(125deg, #ffffff 0%, #f7f2e8 100%);
-        padding: 10px 12px;
-        margin-bottom: 10px;
-      }
-      .lobby-hero h3 {
-        margin: 0 0 6px 0;
-        letter-spacing: 0.04em;
-      }
-      .lobby-hero p {
-        margin: 0;
-        font-size: 0.85rem;
-      }
-      .demo-stat-grid {
-        margin-top: 8px;
-        display: grid;
-        grid-template-columns: repeat(3, minmax(110px, 1fr));
-        gap: 8px;
-      }
-      .demo-stat {
-        border: 2px solid #111111;
-        background: #ffffff;
-        padding: 8px;
-      }
-      .demo-stat-label {
-        font-size: 0.7rem;
-        letter-spacing: 0.08em;
-      }
-      .demo-stat-value {
-        display: block;
-        font-size: 1.2rem;
-        font-weight: 700;
-        margin-top: 2px;
-      }
+
       .room-list-item {
         opacity: 0;
         transform: translateY(5px);
         animation: roomCardIn 260ms ease forwards;
       }
-      @keyframes roomCardIn {
-        from { opacity: 0; transform: translateY(5px); }
-        to { opacity: 1; transform: translateY(0); }
+
+      .room-inline-status {
+        margin-top: 8px;
       }
+
+      .signal-bars {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(20px, 1fr));
+        gap: 6px;
+        align-items: end;
+      }
+
+      .signal-bar {
+        border: 1px solid var(--line);
+        border-radius: 5px 5px 2px 2px;
+        background: linear-gradient(180deg, #a9baff 0%, #5f7fff 100%);
+        height: var(--h, 20px);
+        min-height: 12px;
+        animation: signalPulse 1.8s ease-in-out infinite;
+        animation-delay: var(--d, 0s);
+      }
+
+      .signal-bar-label {
+        display: block;
+        text-align: center;
+        font-size: 0.68rem;
+        margin-top: 3px;
+      }
+
       .participant-card {
         margin-bottom: 8px;
-        border: 2px solid #111111;
-        background: #ffffff;
+        border: 1px solid var(--line);
+        border-radius: 10px;
         padding: 8px;
+        background: rgba(255, 255, 255, 0.02);
       }
+
       .participant-card.online {
-        background: linear-gradient(180deg, #ffffff 0%, #eef7ef 100%);
+        border-color: rgba(45, 226, 186, 0.46);
       }
+
       .participant-card.just-joined {
         animation: participantJoinGlow 980ms ease;
       }
+
       .participant-head {
         display: flex;
         justify-content: space-between;
         gap: 8px;
-        align-items: center;
       }
-      .participant-tags {
-        margin-top: 5px;
-        display: flex;
-        gap: 6px;
-        flex-wrap: wrap;
+
+      .score-meter {
+        height: 12px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        overflow: hidden;
       }
-      .participant-tag {
-        border: 1px solid #111111;
-        padding: 1px 6px;
-        font-size: 0.72rem;
-        background: #ffffff;
+
+      .score-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #2de2ba, #6f8cff);
       }
-      @keyframes participantJoinGlow {
-        0% { box-shadow: 0 0 0 0 #2f6f2f66; transform: translateY(1px); }
-        60% { box-shadow: 0 0 0 6px #2f6f2f00; transform: translateY(0); }
-        100% { box-shadow: 0 0 0 0 #2f6f2f00; }
-      }
-      .demo-banner {
-        margin-bottom: 12px;
-        border: 2px dashed #111111;
-        background: #eef5ff;
+
+      .toast {
+        position: fixed;
+        right: 16px;
+        bottom: 16px;
+        border: 1px solid var(--line-strong);
+        border-radius: 10px;
+        background: rgba(16, 30, 55, 0.96);
+        color: var(--text);
         padding: 10px 12px;
-        font-size: 0.86rem;
+        font-size: 0.84rem;
+        z-index: 40;
       }
+
+      .demo-banner,
       .tester-note {
-        margin-bottom: 12px;
-        border: 2px solid #d4a800;
-        background: #fffbea;
-        padding: 12px 14px;
-        font-size: 0.86rem;
-        line-height: 1.5;
+        border-radius: 12px;
+        padding: 10px 12px;
+        margin-bottom: 10px;
+        font-size: 0.84rem;
       }
-      .tester-note strong {
-        display: block;
-        margin-bottom: 4px;
+
+      .demo-banner {
+        border: 1px dashed #84a5ff;
+        background: rgba(111, 140, 255, 0.12);
       }
+
+      .tester-note {
+        border: 1px solid #ffcb66;
+        background: rgba(255, 218, 140, 0.14);
+      }
+
       .tester-note .mock-cta {
-        margin-top: 10px;
+        margin-top: 8px;
       }
+
+      .reveal {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+
+      .screen.active .reveal {
+        animation: fadeInUp 320ms ease forwards;
+      }
+
+      .screen.active .reveal:nth-child(2) {
+        animation-delay: 60ms;
+      }
+
+      .screen.active .reveal:nth-child(3) {
+        animation-delay: 120ms;
+      }
+
+      @keyframes fadeInUp {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @keyframes pulseTrack {
+        0% { opacity: 0.25; transform: translateX(-8px); }
+        18% { opacity: 1; transform: translateX(0); }
+        54% { opacity: 1; transform: translateX(0); }
+        100% { opacity: 0.25; transform: translateX(8px); }
+      }
+
+      @keyframes driftGlow {
+        0% { transform: translateX(-10px) translateY(-3px); }
+        50% { transform: translateX(8px) translateY(5px); }
+        100% { transform: translateX(-10px) translateY(-3px); }
+      }
+
+      @keyframes signalPulse {
+        0% { transform: translateY(0); opacity: 0.85; }
+        50% { transform: translateY(-2px); opacity: 1; }
+        100% { transform: translateY(0); opacity: 0.85; }
+      }
+
       @keyframes pulseRing {
         0% { opacity: 0.35; }
         50% { opacity: 0.9; }
         100% { opacity: 0.35; }
       }
-      @media (max-width: 760px) {
-        .row {
-          grid-template-columns: 1fr;
-        }
-        .control-grid {
-          grid-template-columns: 1fr;
-        }
-        .room-grid {
-          grid-template-columns: 1fr;
-        }
-        .room-url {
-          grid-template-columns: 1fr;
-        }
-        .account-grid {
-          grid-template-columns: 1fr;
-        }
-        .pitch-grid {
-          grid-template-columns: 1fr;
-        }
-        .landing-kpis {
-          grid-template-columns: 1fr;
-        }
-        .demo-showcase-grid {
-          grid-template-columns: 1fr;
-        }
-        .login-layout {
-          grid-template-columns: 1fr;
-        }
-        .share-row {
-          grid-template-columns: 1fr;
-        }
-        .insight-grid {
-          grid-template-columns: 1fr;
-        }
-        .rec-layout {
-          grid-template-columns: 1fr;
-        }
+
+      @keyframes roomCardIn {
+        from { opacity: 0; transform: translateY(5px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      @keyframes participantJoinGlow {
+        0% { box-shadow: 0 0 0 0 rgba(45, 226, 186, 0.48); }
+        70% { box-shadow: 0 0 0 8px rgba(45, 226, 186, 0); }
+        100% { box-shadow: none; }
+      }
+
+      @keyframes ctaPulse {
+        0%, 100% { box-shadow: 0 8px 20px rgba(100, 126, 255, 0.45); }
+        50% { box-shadow: 0 10px 26px rgba(100, 126, 255, 0.65); }
+      }
+
+      @media (max-width: 900px) {
+        .home-proof-grid,
+        .login-layout,
+        .rec-layout,
+        .insight-grid,
         .room-panels {
           grid-template-columns: 1fr;
         }
-        .demo-stat-grid {
+
+        .room-grid,
+        .control-grid,
+        .account-grid,
+        .demo-stat-grid,
+        .trust-row {
           grid-template-columns: 1fr;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation: none !important;
+          transition: none !important;
+          scroll-behavior: auto !important;
         }
       }
     </style>
   </head>
   <body>
     <main>
-      <h1>Wave2Vector Spotify Live</h1>
-      <div class="header-bar">
-        <div class="top-nav">
-          <button id="view-home" class="active">Home</button>
-          <button id="view-login">Login</button>
-          <button id="view-lobby">Lobby</button>
+      <header class="app-header">
+        <div class="header-top">
+          <div class="brand">
+            <h1>Wave2Vector</h1>
+            <p class="muted">Social Spotify taste rooms with live compatibility.</p>
+          </div>
+          <button id="spotify-badge" class="spotify-badge" title="Click to connect Spotify">
+            <span class="spotify-badge-dot"></span>
+            <span id="spotify-badge-text">Connect Spotify</span>
+          </button>
         </div>
-        <button id="spotify-badge" class="spotify-badge" title="Click to connect Spotify">
-          <span class="spotify-badge-dot"></span>
-          <span id="spotify-badge-text">Connect Spotify</span>
-        </button>
-      </div>
-      <div id="demo-banner" class="demo-banner hidden">Portfolio demo — Wave2Vector maps your Spotify listening history to a taste vector and uses it to power real-time music recommendations and live room compatibility. Spotify OAuth is restricted to invited testers; use the mock profile below to explore the full feature set without a Spotify account.</div>
+        <div class="header-bar">
+          <div class="top-nav">
+            <button id="view-home" class="active">Home</button>
+            <button id="view-login">Account</button>
+            <button id="view-lobby">Lobby</button>
+          </div>
+        </div>
+      </header>
+
+      <div id="demo-banner" class="demo-banner hidden">Portfolio demo mode: Spotify OAuth is limited to invited testers. You can still explore a fully wired mock profile below.</div>
       <div id="tester-note" class="tester-note hidden">
-        <strong>🔒 Spotify auth is enabled for invited testers only.</strong>
-        Not on the list? No problem — explore a pre-built mock profile to see taste mapping, recommendations, and live-room compatibility in action.
+        <strong>Spotify access is currently invite-only.</strong>
+        Use the guided mock profile to preview taste mapping, recommendations, and live-room compatibility.
         <div class="mock-cta">
-          <button id="try-mock-demo">Explore Mock Profile</button>
+          <button id="try-mock-demo" class="button-primary">Explore Mock Profile</button>
         </div>
       </div>
-      <div id="global-account-banner" class="global-account-banner">Map your Spotify taste and explore live compatibility.</div>
+      <div id="global-account-banner" class="global-account-banner">Create your account once, then jump into rooms with your taste profile ready.</div>
 
       <div id="screen-home" class="screen active">
-        <section class="panel landing-hero">
-          <h2>Your music taste, turned into live chemistry.</h2>
-          <p class="muted">Wave2Vector builds a taste fingerprint from your Spotify listening data, then blends it with friends in real time for compatibility scores, shared horoscope-style insights, and mutual track picks.</p>
+        <section class="panel glass home-hero reveal">
+          <span class="eyebrow">Spotify taste intelligence</span>
+          <h2>Map your Spotify taste, then compare it live with friends.</h2>
+          <p class="muted">Wave2Vector turns your listening history into a taste profile, opens shared rooms, and updates compatibility + mutual discovery in real time while you listen.</p>
           <div class="landing-actions">
-            <button id="landing-go-login">Start With Login</button>
-            <button id="landing-go-lobby" class="secondary">Browse Lobby</button>
-          </div>
-          <div class="landing-kpis">
-            <div class="landing-kpi"><span class="landing-kpi-label">TASTE PROFILE</span><span class="landing-kpi-value">13D VECTOR</span></div>
-            <div class="landing-kpi"><span class="landing-kpi-label">REAL-TIME MODE</span><span class="landing-kpi-value">LIVEKIT</span></div>
-            <div class="landing-kpi"><span class="landing-kpi-label">SESSION OUTPUT</span><span class="landing-kpi-value">COMPAT + PICKS</span></div>
+            <button id="landing-go-login" class="button-primary cta-pulse">Create Account</button>
+            <button id="landing-go-lobby" class="button-secondary">Open Lobby</button>
           </div>
         </section>
 
-        <section class="panel">
-          <h2>What You Unlock</h2>
-          <div class="pitch-grid">
-            <div class="pitch-card">
-              <svg class="pitch-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M6 13c2-2 10-2 12 0"></path><path d="M8 9c3-1 5-1 8 0"></path></svg>
-              <strong>Taste Mapping</strong>
-              <p class="muted">Build your profile once, then keep recommendations fresh with lightweight syncs.</p>
-            </div>
-            <div class="pitch-card">
-              <svg class="pitch-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16"></rect><path d="M8 8h8v8H8z"></path></svg>
-              <strong>Shared Rooms</strong>
-              <p class="muted">Spin up a room, invite a friend, and merge your music DNA in seconds.</p>
-            </div>
-            <div class="pitch-card">
-              <svg class="pitch-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18l5-6 4 3 7-9"></path><path d="M4 20h16"></path></svg>
-              <strong>Live Insights</strong>
-              <p class="muted">See compatibility summaries, taste horoscope text, and mutual recommendations.</p>
-            </div>
-          </div>
-        </section>
-
-        <section class="demo-showcase">
-          <div class="demo-showcase-grid">
+        <section class="panel reveal">
+          <div class="home-proof-grid">
             <div class="demo-stage" aria-label="Animated product demo preview">
-              <strong>LIVE ROOM PREVIEW</strong>
+              <strong>Live room preview</strong>
               <div class="demo-trackline">
-                <div class="demo-track"><span>Radiohead + The Damned</span><span class="demo-pill">82% match</span></div>
-                <div class="demo-track"><span>Now Playing blend update</span><span class="demo-pill">live</span></div>
-                <div class="demo-track"><span>Mutual pick: Fast tempo indie</span><span class="demo-pill">new</span></div>
-                <div class="demo-track"><span>Taste horoscope generated</span><span class="demo-pill">AI</span></div>
+                <div class="demo-track"><span>Two profiles synced</span><span class="demo-pill">ready</span></div>
+                <div class="demo-track"><span>Compatibility recomputed</span><span class="demo-pill">82%</span></div>
+                <div class="demo-track"><span>Mutual track surfaced</span><span class="demo-pill">new</span></div>
+                <div class="demo-track"><span>Taste story updated</span><span class="demo-pill">live</span></div>
               </div>
-              <div class="demo-caption">Animated preview of what users see once profiles are synced.</div>
             </div>
-            <div class="demo-copy">
-              <h3>Think "social playlist chemistry," not just recommendations.</h3>
-              <p class="muted">This is where the app feels premium: users get instant personality-level feedback, shared momentum, and a reason to invite someone right now.</p>
-              <ul>
-                <li>Real-time compatibility score that updates with current listening</li>
-                <li>Mutual discovery feed that feels collaborative, not generic</li>
-                <li>Shareable room link + taste story designed for virality</li>
-              </ul>
+            <div>
+              <h3>What happens in seconds</h3>
+              <p class="muted">Connect Spotify, enter a room, and instantly see where your music overlap is strongest. The app keeps updating as room state changes, so discovery stays social instead of static.</p>
+              <div class="trust-row">
+                <div class="trust-pill">Spotify OAuth only</div>
+                <div class="trust-pill">No raw audio capture</div>
+                <div class="trust-pill">Real-time room sync</div>
+              </div>
             </div>
           </div>
         </section>
 
-        <div class="panel auth-banner" data-requires-account="true">
+        <section class="panel auth-banner reveal" data-requires-account="true">
           <div id="auth-status-content"><span class="muted">Checking Spotify connection...</span></div>
           <div class="sync-row">
             <div id="sync-status" class="sync-status">Waiting for Spotify sync...</div>
@@ -1130,16 +1080,18 @@
             <div class="phase-pill" data-phase="complete">Complete</div>
           </div>
           <div id="sync-log" class="sync-log muted">Sync log will appear here.</div>
-        </div>
+        </section>
 
-        <div class="panel" data-requires-account="true">
-          <button id="login">Connect Spotify</button>
-          <button id="refresh">Sync</button>
+        <section class="panel reveal" data-requires-account="true">
+          <h2>Taste controls</h2>
+          <p class="muted">Refresh your profile, choose recommendation mode, and tune blend behavior for Home suggestions.</p>
+          <button id="login" class="button-primary">Connect Spotify</button>
+          <button id="refresh">Sync Profile</button>
           <div class="mode-switch">
             <button id="mode-live" class="active">Live Recommendations</button>
             <button id="mode-batch">Profile Recommendations</button>
           </div>
-          <div class="mode-helper muted">These modes only affect Home recommendations. Room compatibility uses shared room state.</div>
+          <div class="mode-helper muted">This mode only affects Home recommendations. Room compatibility always uses shared room state.</div>
           <div class="control-grid">
             <label>
               Diversity <span id="diversity-value">0.20</span>
@@ -1154,19 +1106,19 @@
               <input id="k" type="number" min="1" max="20" value="5" />
             </label>
           </div>
-        </div>
+        </section>
 
-        <section class="panel" data-requires-account="true">
-          <h2>Taste Profile</h2>
+        <section class="panel reveal" data-requires-account="true">
+          <h2>Your taste profile</h2>
           <div id="profile"></div>
         </section>
 
-        <section class="panel" data-requires-account="true">
-          <h2>Model Insights</h2>
+        <section class="panel reveal" data-requires-account="true">
+          <h2>Taste insights</h2>
           <div id="model-insights"><p class="muted">Insights appear after a successful sync.</p></div>
         </section>
 
-        <section class="panel" data-requires-account="true">
+        <section class="panel reveal" data-requires-account="true">
           <h2>Recommendations</h2>
           <div class="rec-layout">
             <div id="recommendations"></div>
@@ -1177,8 +1129,9 @@
 
       <div id="screen-login" class="screen">
         <div class="login-layout">
-          <section id="account-panel" class="panel">
-            <h2 id="account-panel-title">Account Access</h2>
+          <section id="account-panel" class="panel reveal">
+            <h2 id="account-panel-title">Account access</h2>
+            <p class="muted">Use your app account to keep your taste profile ready, then connect Spotify when you want fresh sync.</p>
             <div class="account-grid">
               <label>
                 Email
@@ -1186,43 +1139,43 @@
               </label>
               <label>
                 Password
-                <input id="account-password" type="password" placeholder="at least 8 chars" />
+                <input id="account-password" type="password" placeholder="At least 8 characters" />
               </label>
               <div id="account-actions" class="account-actions">
-                <button id="account-register">Register</button>
+                <button id="account-register" class="button-primary">Register</button>
                 <button id="account-login">Log In</button>
                 <button id="account-logout" class="hidden">Log Out</button>
               </div>
             </div>
-            <div id="account-status" class="helper-note muted">Use your app account to unlock profile sync and room features.</div>
+            <div id="account-status" class="helper-note muted">Create an account to save your profile state and room context.</div>
           </section>
 
-          <section id="account-gate" class="panel">
-            <h2>Why Create an Account?</h2>
-            <p class="muted">Accounts keep your profile and preferences ready so you can jump back into recommendations or shared rooms without rebuilding every session.</p>
+          <section id="account-gate" class="panel reveal">
+            <h2>What your account unlocks</h2>
+            <p class="muted">Account and Spotify each do one job: your account keeps identity/session continuity, Spotify powers taste mapping and real-time compatibility.</p>
             <div class="stepper">
               <div class="step active"><span class="dot"></span><span>Create your app account</span></div>
               <div class="step"><span class="dot"></span><span>Connect Spotify securely</span></div>
-              <div class="step"><span class="dot"></span><span>Sync taste vector + start rooms</span></div>
+              <div class="step"><span class="dot"></span><span>Join a room and compare live taste</span></div>
             </div>
           </section>
         </div>
       </div>
 
       <div id="screen-lobby" class="screen">
-        <section class="panel">
-          <h2>Lobby</h2>
-          <p class="muted">Jam out with friends.</p>
+        <section class="panel reveal">
+          <h2>Room lobby</h2>
+          <p class="muted">Start or join a room, share the link, and bring one friend in for live compatibility.</p>
           <div class="lobby-hero">
-            <h3>LiveKit Demo Reel</h3>
-            <p class="muted">Real-time room presence + shared taste vectors + compatibility recompute from live participant state.</p>
+            <h3>Live room health</h3>
+            <p class="muted">Room presence, profile readiness, and compatibility refresh all update from shared room state.</p>
             <div class="demo-stat-grid">
               <div class="demo-stat"><span class="demo-stat-label">ACTIVE ROOMS</span><span id="demo-active-rooms" class="demo-stat-value">0</span></div>
               <div class="demo-stat"><span class="demo-stat-label">CONNECTED USERS</span><span id="demo-connected-users" class="demo-stat-value">0</span></div>
               <div class="demo-stat"><span class="demo-stat-label">READY PROFILES</span><span id="demo-ready-profiles" class="demo-stat-value">0</span></div>
             </div>
           </div>
-          <div class="helper-note">Create your room, share the link, and invite one person at a time.</div>
+          <div class="helper-note">Tip: Create the room first, then share the link so your friend lands in the right place.</div>
           <div class="room-grid">
             <label class="field-with-action room-name-field">
               Room Name
@@ -1236,7 +1189,7 @@
               <input id="participant-name" placeholder="Alex" />
             </label>
             <div>
-              <button id="join-room">Create Room</button>
+              <button id="join-room" class="button-primary">Create Room</button>
               <button id="leave-room">Leave</button>
             </div>
           </div>
@@ -1256,7 +1209,7 @@
             </div>
           </div>
           <div id="room-status" class="status-badge muted">Not connected to a room</div>
-          <div id="room-help" class="helper-note instructions muted">Once your room is created, share the link. Your friend can join and unlock shared compatibility.</div>
+          <div id="room-help" class="room-help muted">Create your room, share your link, and recompute once both profiles are active.</div>
           <div class="room-directory-title muted">ROOM DIRECTORY</div>
           <div id="active-rooms" class="active-rooms muted">Rooms shared with you will appear here.</div>
           <div>
@@ -1267,38 +1220,38 @@
       </div>
 
       <div id="screen-room" class="screen">
-        <section class="panel">
+        <section class="panel reveal">
           <div class="room-hero">
             <h2 id="room-welcome">Welcome</h2>
-            <p id="room-intro" class="muted room-subtitle">This is your space. Your taste profile powers recommendations here, and it gets even better once someone joins you.</p>
+            <p id="room-intro" class="muted room-subtitle">This room blends your taste profile with anyone who joins so compatibility and shared discovery can update live.</p>
             <div id="room-presence-badges" class="presence-row"></div>
             <div id="room-taste-signals" class="taste-signal-row"></div>
             <div id="room-signal-bars" class="signal-bars"></div>
             <div id="room-taste-summary" class="muted room-taste-summary">Sync and recommendations will surface your top taste signatures.</div>
           </div>
-          <button id="recompute-room">Recompute Compatibility</button>
+          <button id="recompute-room" class="button-primary">Recompute Compatibility</button>
           <div id="room-inline-status" class="status-badge muted room-inline-status">Not connected to a room</div>
           <div id="participant-list" style="margin-top:10px;"></div>
         </section>
 
         <div class="room-panels">
-          <section class="panel room-panel-card">
+          <section class="panel reveal">
             <h2>Compatibility</h2>
             <div id="compatibility"></div>
           </section>
 
-          <section class="panel room-panel-card">
-            <h2>Taste Horoscope</h2>
+          <section class="panel reveal">
+            <h2>Taste story</h2>
             <div id="horoscope"></div>
           </section>
 
-          <section class="panel room-panel-card">
-            <h2>Both Of You Might Like</h2>
+          <section class="panel reveal">
+            <h2>Mutual recommendations</h2>
             <div id="mutual-recommendations"></div>
           </section>
 
-          <section class="panel room-panel-card">
-            <h2>Now Playing Comparison</h2>
+          <section class="panel reveal">
+            <h2>Now playing comparison</h2>
             <div id="now-playing-compare"></div>
           </section>
         </div>
