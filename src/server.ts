@@ -513,7 +513,7 @@ function computeMatchVerdictFromScore(score: number): { verdict: string; verdict
   if (score >= 75) return { verdict: "Same Universe, Different Moons", verdictEmoji: "🌙" };
   if (score >= 60) return { verdict: "Sonic Siblings", verdictEmoji: "🎵" };
   if (score >= 45) return { verdict: "Crossover Potential", verdictEmoji: "🔀" };
-  if (score >= 30) return { verdict: "Respectful Strangers", verdictEmoji: "🤝" };
+  if (score >= 30) return { verdict: "Respectful Strangers", verdictEmoji: "👋" };
   return { verdict: "Different Planets", verdictEmoji: "🪐" };
 }
 
@@ -1815,7 +1815,9 @@ app.get("/api/rooms/active", async (req, res) => {
         for (const p of tasteReadyParticipants) {
           const vec = p.tasteProfile?.tasteVector;
           if (!vec?.length || vec.length !== myVector.length) continue;
-          let dot = 0, normA = 0, normB = 0;
+          let dot = 0;
+          let normA = 0;
+          let normB = 0;
           for (let i = 0; i < myVector.length; i += 1) {
             dot += myVector[i] * vec[i];
             normA += myVector[i] * myVector[i];
@@ -2189,10 +2191,10 @@ app.get("/api/rooms/:roomName/match-card", async (req, res) => {
     const { verdict, verdictEmoji } = computeMatchVerdictFromScore(comp.score.overallScore);
 
     const pair = room.participants.filter((p) => p.tasteProfile);
+    const signalsA = pair[0]?.tasteProfile?.topSignals ?? [];
+    const signalsB = pair[1]?.tasteProfile?.topSignals ?? [];
     const overlappingSignals = pair.length >= 2
-      ? pair[0].tasteProfile!.topSignals.filter((sig) =>
-          pair[1].tasteProfile!.topSignals.includes(sig),
-        )
+      ? signalsA.filter((sig) => signalsB.includes(sig))
       : [];
 
     const shareText =
