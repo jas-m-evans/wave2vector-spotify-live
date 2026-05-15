@@ -69,11 +69,15 @@ const demoBannerEl = document.getElementById("demo-banner");
 const testerNoteEl = document.getElementById("tester-note");
 const tryMockDemoBtnEl = document.getElementById("try-mock-demo");
 const homeViewBtn = document.getElementById("view-home");
+const loginViewBtn = document.getElementById("view-login");
 const lobbyViewBtn = document.getElementById("view-lobby");
+const landingGoLoginBtn = document.getElementById("landing-go-login");
+const landingGoLobbyBtn = document.getElementById("landing-go-lobby");
 const spotifyBadgeEl = document.getElementById("spotify-badge");
 const spotifyBadgeDotEl = spotifyBadgeEl?.querySelector(".spotify-badge-dot");
 const spotifyBadgeTextEl = document.getElementById("spotify-badge-text");
 const homeScreenEl = document.getElementById("screen-home");
+const loginScreenEl = document.getElementById("screen-login");
 const lobbyScreenEl = document.getElementById("screen-lobby");
 const roomScreenEl = document.getElementById("screen-room");
 const toastEl = document.getElementById("toast");
@@ -368,12 +372,15 @@ async function reportDebugLogs() {
 
 function setActiveScreen(screen) {
   const isHome = screen === "home";
+  const isLogin = screen === "login";
   const isLobby = screen === "lobby";
   const isRoom = screen === "room";
   homeScreenEl?.classList.toggle("active", isHome);
+  loginScreenEl?.classList.toggle("active", isLogin);
   lobbyScreenEl?.classList.toggle("active", isLobby);
   roomScreenEl?.classList.toggle("active", isRoom);
   homeViewBtn?.classList.toggle("active", isHome);
+  loginViewBtn?.classList.toggle("active", isLogin);
   lobbyViewBtn?.classList.toggle("active", isLobby);
 }
 
@@ -406,7 +413,7 @@ function setGlobalAccountBanner(account) {
     return;
   }
   if (!account) {
-    globalAccountBannerEl.textContent = "Register or log in to continue.";
+    globalAccountBannerEl.textContent = "Build your taste profile, then jump into shared rooms.";
     globalAccountBannerEl.classList.remove("welcome");
     return;
   }
@@ -921,7 +928,7 @@ function setAccountAuthControlsVisible(isVisible) {
   accountGridEl?.classList.toggle("logged-in", !isVisible);
   accountActionsEl?.classList.toggle("logged-in-only", !isVisible);
   if (accountPanelTitleEl) {
-    accountPanelTitleEl.textContent = isVisible ? "Log In or Register" : "Account";
+    accountPanelTitleEl.textContent = isVisible ? "Account Access" : "Account";
   }
 }
 
@@ -933,7 +940,7 @@ function renderAccountStatus(payload) {
     currentAccount = null;
     setAccountAuthControlsVisible(true);
     accountLogoutBtn?.classList.add("hidden");
-    accountStatusEl.textContent = "Register or log in to continue.";
+    accountStatusEl.textContent = "Use your account credentials to continue.";
     setGlobalAccountBanner(null);
     // Do not call setFeatureGate(true) — lobby and rooms are public.
     return;
@@ -2129,6 +2136,7 @@ accountRegisterBtn?.addEventListener("click", async () => {
     setSyncStatus("Account created. Connect Spotify to begin authentication, then sync will run with live progress.");
     resetSyncLog();
     appendSyncLog("Account created. Waiting for Spotify connect.");
+    setActiveScreen("home");
     accountPasswordInput.value = "";
   } catch (error) {
     accountStatusEl.textContent = error instanceof Error ? error.message : String(error);
@@ -2153,6 +2161,7 @@ accountLoginBtn?.addEventListener("click", async () => {
     setSyncStatus("Logged in. Connect Spotify to authenticate, then sync progress will appear here.");
     appendSyncLog("Logged in successfully.");
     accountPasswordInput.value = "";
+    setActiveScreen("home");
     await refresh();
   } catch (error) {
     accountStatusEl.textContent = error instanceof Error ? error.message : String(error);
@@ -2163,6 +2172,7 @@ accountLogoutBtn?.addEventListener("click", async () => {
   await fetch("/api/account/logout", { method: "POST" });
   await checkAccountAuth();
   setSyncStatus("You are logged out.");
+  setActiveScreen("login");
   await refresh().catch((error) => setDebug(String(error)));
 });
 
@@ -2171,9 +2181,24 @@ homeViewBtn?.addEventListener("click", () => {
   logEvent("ui", "Switched to Home screen");
 });
 
+loginViewBtn?.addEventListener("click", () => {
+  setActiveScreen("login");
+  logEvent("ui", "Switched to Login screen");
+});
+
 lobbyViewBtn?.addEventListener("click", () => {
   setActiveScreen("lobby");
   logEvent("ui", "Switched to Lobby screen");
+});
+
+landingGoLoginBtn?.addEventListener("click", () => {
+  setActiveScreen("login");
+  logEvent("ui", "Landing CTA to Login");
+});
+
+landingGoLobbyBtn?.addEventListener("click", () => {
+  setActiveScreen("lobby");
+  logEvent("ui", "Landing CTA to Lobby");
 });
 
 recEl.addEventListener("mouseover", (event) => {

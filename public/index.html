@@ -68,6 +68,7 @@
       .top-nav {
         display: flex;
         gap: 8px;
+        flex-wrap: wrap;
       }
       .top-nav button.active {
         background: #111111;
@@ -119,6 +120,57 @@
         background: #ffffff;
         padding: 10px;
         min-height: 120px;
+      }
+      .landing-hero {
+        border: 2px solid #111111;
+        background:
+          radial-gradient(circle at 82% 18%, #e7f0ff 0 24%, transparent 25%),
+          linear-gradient(125deg, #ffffff 0%, #eef4ff 100%);
+        padding: 18px;
+        margin-bottom: 12px;
+      }
+      .landing-hero h2 {
+        margin: 0 0 8px 0;
+      }
+      .landing-hero p {
+        margin: 0;
+        font-size: 0.9rem;
+      }
+      .landing-actions {
+        margin-top: 12px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .landing-actions button.secondary {
+        background: #f6f6f6;
+      }
+      .landing-kpis {
+        margin-top: 14px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(120px, 1fr));
+        gap: 8px;
+      }
+      .landing-kpi {
+        border: 2px solid #111111;
+        background: #ffffff;
+        padding: 8px;
+      }
+      .landing-kpi-label {
+        display: block;
+        font-size: 0.72rem;
+        letter-spacing: 0.08em;
+      }
+      .landing-kpi-value {
+        display: block;
+        font-size: 1.15rem;
+        font-weight: 700;
+        margin-top: 2px;
+      }
+      .login-layout {
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
+        gap: 12px;
       }
       .pitch-icon {
         width: 34px;
@@ -863,6 +915,12 @@
         .pitch-grid {
           grid-template-columns: 1fr;
         }
+        .landing-kpis {
+          grid-template-columns: 1fr;
+        }
+        .login-layout {
+          grid-template-columns: 1fr;
+        }
         .share-row {
           grid-template-columns: 1fr;
         }
@@ -887,6 +945,7 @@
       <div class="header-bar">
         <div class="top-nav">
           <button id="view-home" class="active">Home</button>
+          <button id="view-login">Login</button>
           <button id="view-lobby">Lobby</button>
         </div>
         <button id="spotify-badge" class="spotify-badge" title="Click to connect Spotify">
@@ -902,51 +961,43 @@
           <button id="try-mock-demo">Explore Mock Profile</button>
         </div>
       </div>
-      <div id="global-account-banner" class="global-account-banner">Register or log in to continue.</div>
+      <div id="global-account-banner" class="global-account-banner">Map your Spotify taste and explore live compatibility.</div>
 
       <div id="screen-home" class="screen active">
-        <section id="account-panel" class="panel">
-          <h2 id="account-panel-title">Log In or Register</h2>
-          <div class="account-grid">
-            <label>
-              Email
-              <input id="account-email" type="email" placeholder="you@example.com" />
-            </label>
-            <label>
-              Password
-              <input id="account-password" type="password" placeholder="at least 8 chars" />
-            </label>
-            <div id="account-actions" class="account-actions">
-              <button id="account-register">Register</button>
-              <button id="account-login">Log In</button>
-              <button id="account-logout" class="hidden">Log Out</button>
-            </div>
+        <section class="panel landing-hero">
+          <h2>Your music taste, turned into live chemistry.</h2>
+          <p class="muted">Wave2Vector builds a taste fingerprint from your Spotify listening data, then blends it with friends in real time for compatibility scores, shared horoscope-style insights, and mutual track picks.</p>
+          <div class="landing-actions">
+            <button id="landing-go-login">Start With Login</button>
+            <button id="landing-go-lobby" class="secondary">Browse Lobby</button>
           </div>
-          <div id="account-status" class="helper-note muted">Create a free account. We only use this for access and saved profile data.</div>
+          <div class="landing-kpis">
+            <div class="landing-kpi"><span class="landing-kpi-label">TASTE PROFILE</span><span class="landing-kpi-value">13D VECTOR</span></div>
+            <div class="landing-kpi"><span class="landing-kpi-label">REAL-TIME MODE</span><span class="landing-kpi-value">LIVEKIT</span></div>
+            <div class="landing-kpi"><span class="landing-kpi-label">SESSION OUTPUT</span><span class="landing-kpi-value">COMPAT + PICKS</span></div>
+          </div>
         </section>
 
-        <section id="account-gate" class="panel">
-          <h2>Create Your Free Account</h2>
-          <p class="muted">Build your personal Spotify taste map, keep it cached, and jump into shared rooms with friends. We only use your account for sign-in and product access. No spam, no marketing blasts.</p>
+        <section class="panel">
+          <h2>What You Unlock</h2>
           <div class="pitch-grid">
             <div class="pitch-card">
               <svg class="pitch-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M6 13c2-2 10-2 12 0"></path><path d="M8 9c3-1 5-1 8 0"></path></svg>
               <strong>Taste Mapping</strong>
-              <p class="muted">One sync builds your profile and powers recommendations instantly.</p>
+              <p class="muted">Build your profile once, then keep recommendations fresh with lightweight syncs.</p>
             </div>
             <div class="pitch-card">
               <svg class="pitch-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16"></rect><path d="M8 8h8v8H8z"></path></svg>
-              <strong>Live Lobby</strong>
-              <p class="muted">Create a room, share your link, and bring a friend into the same session.</p>
+              <strong>Shared Rooms</strong>
+              <p class="muted">Spin up a room, invite a friend, and merge your music DNA in seconds.</p>
             </div>
             <div class="pitch-card">
               <svg class="pitch-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18l5-6 4 3 7-9"></path><path d="M4 20h16"></path></svg>
-              <strong>Shared Insights</strong>
-              <p class="muted">Compare compatibility and discover mutual tracks together.</p>
+              <strong>Live Insights</strong>
+              <p class="muted">See compatibility summaries, taste horoscope text, and mutual recommendations.</p>
             </div>
           </div>
         </section>
-
         <div class="panel auth-banner" data-requires-account="true">
           <div id="auth-status-content"><span class="muted">Checking Spotify connection...</span></div>
           <div class="sync-row">
@@ -1005,6 +1056,40 @@
             <div id="recommendation-map"><p class="muted">Map appears after recommendations load.</p></div>
           </div>
         </section>
+      </div>
+
+      <div id="screen-login" class="screen">
+        <div class="login-layout">
+          <section id="account-panel" class="panel">
+            <h2 id="account-panel-title">Account Access</h2>
+            <div class="account-grid">
+              <label>
+                Email
+                <input id="account-email" type="email" placeholder="you@example.com" />
+              </label>
+              <label>
+                Password
+                <input id="account-password" type="password" placeholder="at least 8 chars" />
+              </label>
+              <div id="account-actions" class="account-actions">
+                <button id="account-register">Register</button>
+                <button id="account-login">Log In</button>
+                <button id="account-logout" class="hidden">Log Out</button>
+              </div>
+            </div>
+            <div id="account-status" class="helper-note muted">Use your app account to unlock profile sync and room features.</div>
+          </section>
+
+          <section id="account-gate" class="panel">
+            <h2>Why Create an Account?</h2>
+            <p class="muted">Accounts keep your profile and preferences ready so you can jump back into recommendations or shared rooms without rebuilding every session.</p>
+            <div class="stepper">
+              <div class="step active"><span class="dot"></span><span>Create your app account</span></div>
+              <div class="step"><span class="dot"></span><span>Connect Spotify securely</span></div>
+              <div class="step"><span class="dot"></span><span>Sync taste vector + start rooms</span></div>
+            </div>
+          </section>
+        </div>
       </div>
 
       <div id="screen-lobby" class="screen">
